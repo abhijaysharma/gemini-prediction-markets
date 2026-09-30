@@ -2,15 +2,17 @@ import type { MarketInfo } from "./types";
 
 // Market discovery over the public REST API. The docs say the events endpoint
 // is where instrumentSymbol values come from; rather than hardcode a response
-// schema we haven't validated against live data, we walk the JSON and collect
-// every object that has an instrumentSymbol.
+// schema, we walk the JSON and collect every object that has an
+// instrumentSymbol, inheriting title, status and activity from its event.
 
 const TITLE_KEYS = ["title", "eventTitle", "name", "label", "description"];
 const STATUS_KEYS = ["status", "contractStatus", "state"];
 const ACTIVE = /active|open|trading/i;
 
 export async function fetchMarkets(restUrl: string): Promise<MarketInfo[]> {
-  const res = await fetch(`${restUrl}/v1/prediction-markets/events`);
+  // One page is enough: the default order puts featured, high-volume events
+  // first, and each page of 50 events is already about 12 MB.
+  const res = await fetch(`${restUrl}/v1/prediction-markets/events?status=active&limit=50`);
   if (!res.ok) throw new Error(`events request failed with HTTP ${res.status}`);
   return extractMarkets(await res.json());
 }
@@ -19,31 +21,38 @@ export function extractMarkets(body: unknown): MarketInfo[] {
   const out: MarketInfo[] = [];
   const seen = new Set<string>();
 
-  const walk = (node: unknown, parentTitle: string | null, parentStatus: string | null) => {
+  type Inherited = { title: string | null; status: string | null; live: boolean; volume24h: number };
+
+  const walk = (node: unknown, parent: Inherited) => {
     if (Array.isArray(node)) {
-      for (const child of node) walk(child, parentTitle, parentStatus);
+      for (const child of node) walk(child, parent);
       return;
     }
     if (!node || typeof node !== "object") return;
     const obj = node as Record<string, unknown>;
     const ownTitle = firstString(obj, TITLE_KEYS);
     const ownStatus = firstString(obj, STATUS_KEYS);
+    const volume = obj.volume24h === undefined ? NaN : Number(obj.volume24h);
+    const here: Inherited = {
+      title: ownTitle ?? parent.title,
+      status: ownStatus ?? parent.status,
+      live: typeof obj.isLive === "boolean" ? obj.isLive : parent.live,
+      volume24h: Number.isFinite(volume) ? volume : parent.volume24h,
+    };
     const symbol = obj.instrumentSymbol;
 
     if (typeof symbol === "string" && !seen.has(symbol)) {
       seen.add(symbol);
       const title =
-        [parentTitle, ownTitle].filter((x, i, arr) => x && arr.indexOf(x) === i).join(": ") || null;
-      out.push({ symbol, title, status: ownStatus ?? parentStatus });
+        [parent.title, ownTitle].filter((x, i, arr) => x && arr.indexOf(x) === i).join(": ") || null;
+      out.push({ symbol, title, status: here.status, live: here.live, volume24h: here.volume24h });
     }
     for (const value of Object.values(obj)) {
-      if (value && typeof value === "object") {
-        walk(value, ownTitle ?? parentTitle, ownStatus ?? parentStatus);
-      }
+      if (value && typeof value === "object") walk(value, here);
     }
   };
 
-  walk(body, null, null);
+  walk(body, { title: null, status: null, live: false, volume24h: 0 });
   return out;
 }
 
@@ -71,9 +80,10 @@ export function pickMarket(markets: MarketInfo[], current: string | null): strin
     if (next) return next.m.symbol;
   }
 
-  // Heuristic default: short-dated BTC contracts tend to have the most activity.
-  const btc = pool.find((m) => /BTC/i.test(m.symbol));
-  return (btc ?? pool[0]).symbol;
+  // Otherwise pick where the action is: live events first, then by 24h volume.
+  // Ties keep the API's order (sort is stable).
+  const busiest = [...pool].sort((a, b) => Number(b.live) - Number(a.live) || b.volume24h - a.volume24h)[0];
+  return busiest.symbol;
 }
 
 function parseSeries(symbol: string) {

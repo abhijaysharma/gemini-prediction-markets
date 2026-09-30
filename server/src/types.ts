@@ -50,6 +50,10 @@ export interface MarketInfo {
   symbol: string;
   title: string | null;
   status: string | null;
+  /** From the parent event: a game in progress, a window currently open, etc. */
+  live: boolean;
+  /** From the parent event, so every contract in an event shares it. */
+  volume24h: number;
 }
 
 export interface StatePayload {

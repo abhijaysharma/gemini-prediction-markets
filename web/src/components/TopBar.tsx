@@ -5,7 +5,7 @@ import { post } from "../useStream";
 export function TopBar({ state, markets, connected }: { state: StatePayload; markets: MarketInfo[]; connected: boolean }) {
   const options = [...markets];
   if (state.symbol && !options.some((m) => m.symbol === state.symbol)) {
-    options.unshift({ symbol: state.symbol, title: null, status: null });
+    options.unshift({ symbol: state.symbol, title: null, status: null, live: false, volume24h: 0 });
   }
 
   return (
