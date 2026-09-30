@@ -38,9 +38,11 @@ describe("OrderBook", () => {
     expect(book.bestAsk()).toBe("0.95");
   });
 
+  // On Gemini a frame's U equals the previous frame's u, so a contiguous
+  // frame after a snapshot at 100 starts at U = 100.
   it("applies a contiguous delta", () => {
     const book = seed();
-    expect(book.applyDelta(101, 103, [["0.49", "100"]], [["0.52", "3000"]])).toBe("applied");
+    expect(book.applyDelta(100, 103, [["0.49", "100"]], [["0.52", "3000"]])).toBe("applied");
     expect(book.lastUpdateId).toBe(103);
     expect(book.bestBid()).toBe("0.49");
     expect(book.topAsks(1)).toEqual([["0.52", "3000"]]);
@@ -48,14 +50,14 @@ describe("OrderBook", () => {
 
   it("removes a level when quantity is zero", () => {
     const book = seed();
-    book.applyDelta(101, 101, [["0.48", "0.00"]], []);
+    book.applyDelta(100, 101, [["0.48", "0.00"]], []);
     expect(book.bestBid()).toBe("0.47");
     expect(book.bidCount).toBe(1);
   });
 
   it("treats differently formatted prices as the same level", () => {
     const book = seed();
-    book.applyDelta(101, 101, [["0.480", "0"]], []);
+    book.applyDelta(100, 101, [["0.480", "0"]], []);
     expect(book.bestBid()).toBe("0.47");
   });
 
@@ -79,10 +81,17 @@ describe("OrderBook", () => {
     expect(book.bestBid()).toBe("0.48");
   });
 
+  it("reports a gap when a frame starts even one ID past the last applied", () => {
+    // U = 101 means a frame covering 101 went missing.
+    const book = seed();
+    expect(book.applyDelta(101, 102, [["0.49", "1"]], [])).toBe("gap");
+    expect(book.lastUpdateId).toBe(100);
+  });
+
   it("detects a crossed book", () => {
     const book = seed();
     expect(book.isCrossed()).toBe(false);
-    book.applyDelta(101, 101, [["0.53", "1"]], []);
+    book.applyDelta(100, 101, [["0.53", "1"]], []);
     expect(book.isCrossed()).toBe(true);
   });
 

@@ -6,9 +6,10 @@ export type DeltaResult = "applied" | "stale" | "gap";
 /**
  * A local L2 order book rebuilt from a snapshot plus sequenced deltas.
  *
- * Sequencing follows Gemini's differential depth stream: each delta covers
- * update IDs U..u. If a delta's first ID skips past the last ID we applied,
- * we missed data and the book can no longer be trusted.
+ * Sequencing follows Gemini's differential depth stream. On the live feed each
+ * frame's U equals the previous frame's u, so a frame covers the IDs after U
+ * up to and including u. If U is past the last ID we applied, the frames in
+ * between never arrived and the book can no longer be trusted.
  */
 export class OrderBook {
   private bids = new Map<string, string>();
@@ -46,10 +47,10 @@ export class OrderBook {
     }
     // Everything in this frame is already reflected in the book.
     if (lastId <= this.lastUpdateId) return "stale";
-    // Updates between our last ID and this frame's first ID never arrived.
-    if (firstId > this.lastUpdateId + 1) return "gap";
-    // Partial overlap (firstId <= last < lastId) is safe: setting a level's
-    // quantity is idempotent, so re-applying an old change is harmless.
+    // This frame starts after an ID we never saw, so a frame went missing.
+    if (firstId > this.lastUpdateId) return "gap";
+    // firstId === last is the normal case. An overlap (firstId < last < lastId)
+    // is also safe: setting a level's quantity is idempotent.
     this.applyLevels(this.bids, bids);
     this.applyLevels(this.asks, asks);
     this.lastUpdateId = lastId;

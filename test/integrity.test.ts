@@ -33,7 +33,7 @@ describe("IntegrityChecker", () => {
 
   it("catches a stale level the local book failed to remove", () => {
     const book = bookAt(10);
-    book.applyDelta(11, 11, [["0.40", "7"]], []);
+    book.applyDelta(10, 11, [["0.40", "7"]], []);
     const check = new IntegrityChecker();
     const result = check.onReference(
       { lastUpdateId: 11, bids: [["0.48", "5000"]], asks: [["0.52", "3200"]] },
@@ -49,7 +49,7 @@ describe("IntegrityChecker", () => {
     expect(
       check.onReference({ lastUpdateId: 11, bids: [["0.49", "1"], ["0.48", "5000"]], asks: [["0.52", "3200"]] }, book, 0),
     ).toBeNull();
-    book.applyDelta(11, 11, [["0.49", "1"]], []);
+    book.applyDelta(10, 11, [["0.49", "1"]], []);
     expect(check.onBookAdvanced(book, 0)).toBe("match");
   });
 
@@ -57,7 +57,7 @@ describe("IntegrityChecker", () => {
     const book = bookAt(10);
     const check = new IntegrityChecker();
     check.onReference({ lastUpdateId: 11, bids: [], asks: [] }, book, 0);
-    book.applyDelta(11, 12, [], []);
+    book.applyDelta(10, 12, [], []);
     expect(check.onBookAdvanced(book, 0)).toBeNull();
     expect(check.stats.skipped).toBe(1);
     expect(check.stats.matched).toBe(0);

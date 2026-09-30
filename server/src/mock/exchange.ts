@@ -201,7 +201,8 @@ export class MockExchange {
       const changed = changes !== null && (changes.bids.size > 0 || changes.asks.size > 0);
 
       if (changed) {
-        const U = m.lastId + 1;
+        // Like Gemini, U repeats the previous frame's u.
+        const U = m.lastId;
         m.lastId += changes.count;
         m.lastChangeNs = nowNs();
         this.broadcast(`${key}@depth@100ms`, {
