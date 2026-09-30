@@ -166,6 +166,7 @@ export class App {
         // Jitter is lag above the fastest message we've seen. It cancels out
         // constant clock offset, so it's more trustworthy than raw lag.
         jitterP99: p99 !== null && min !== null ? p99 - min : null,
+        lagSamples: f.lag.size,
       },
       recovery: {
         lastMs: f.recoveries.at(-1) ?? null,

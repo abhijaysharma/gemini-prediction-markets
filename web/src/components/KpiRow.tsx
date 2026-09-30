@@ -4,10 +4,14 @@ import type { StatePayload } from "../../../server/src/types";
 import { fmtInt, fmtMs, median } from "../format";
 import { Hint } from "./Hint";
 
+/** Percentiles over a handful of deltas are noise, so hold them back until then. */
+const LAG_MIN_SAMPLES = 20;
+
 export function KpiRow({ state }: { state: StatePayload }) {
   const { integrity: i, metrics: m, recovery: r, counters: c } = state;
   const decided = i.matched + i.mismatched;
   const passRate = decided > 0 ? (i.matched / decided) * 100 : null;
+  const lagReady = m.lagSamples >= LAG_MIN_SAMPLES;
 
   return (
     <section className="kpis" aria-label="Key metrics">
@@ -25,8 +29,12 @@ export function KpiRow({ state }: { state: StatePayload }) {
         icon={Gauge}
         label="Feed lag, median"
         hint="Exchange event time to arrival here. Includes any offset between this machine's clock and Gemini's. Jitter is lag above the fastest message seen, which cancels a constant offset."
-        value={<Unit text={fmtMs(m.lagP50, 1)} />}
-        meta={`p99 ${fmtMs(m.lagP99, 1)} · jitter p99 ${fmtMs(m.jitterP99, 1)}`}
+        value={<Unit text={lagReady ? fmtMs(m.lagP50, 1) : "–"} />}
+        meta={
+          lagReady
+            ? `p99 ${fmtMs(m.lagP99, 1)} · jitter p99 ${fmtMs(m.jitterP99, 1)}`
+            : `warming up (${m.lagSamples}/${LAG_MIN_SAMPLES} deltas)`
+        }
       />
       <Kpi
         icon={Activity}

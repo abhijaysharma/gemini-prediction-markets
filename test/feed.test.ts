@@ -134,6 +134,18 @@ describe("FeedClient fault handling", () => {
 // Live Gemini markets can sit for minutes with no book changes. depth20
 // snapshots still arrive every 100 ms, but no deltas do.
 describe("FeedClient on a quiet market", () => {
+  it("does not count the snapshot frame as a lag sample", async () => {
+    mock.setQuiet(true);
+    feed.start(SYMBOL);
+    await waitFor(() => feed.integrity.stats.matched >= 5);
+    expect(feed.counters.depthUpdates).toBe(1); // only the snapshot
+    expect(feed.lag.size).toBe(0);
+
+    mock.setQuiet(false);
+    await waitFor(() => feed.lag.size >= 5);
+    expect(feed.lag.size).toBe(feed.counters.depthUpdates - 1);
+  });
+
   it("stays live without deltas, and still catches corruption", async () => {
     mock.setQuiet(true);
     feed.start(SYMBOL);

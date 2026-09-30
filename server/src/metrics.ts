@@ -31,6 +31,10 @@ export class Samples {
     this.buf = [];
   }
 
+  get size(): number {
+    return this.buf.length;
+  }
+
   percentile(p: number): number | null {
     if (this.buf.length === 0) return null;
     const sorted = [...this.buf].sort((a, b) => a - b);

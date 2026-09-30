@@ -76,6 +76,8 @@ export interface StatePayload {
     lagP50: number | null;
     lagP99: number | null;
     jitterP99: number | null;
+    /** How many deltas the lag figures are based on. */
+    lagSamples: number;
   };
   recovery: {
     lastMs: number | null;

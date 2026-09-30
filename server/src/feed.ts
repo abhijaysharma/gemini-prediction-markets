@@ -333,9 +333,6 @@ export class FeedClient extends EventEmitter {
 
   private onDepth(msg: any, recvMs: number): void {
     this.counters.depthUpdates++;
-    // E is nanoseconds since epoch. It exceeds 2^53, so JSON.parse loses the
-    // last few digits, but that's sub-microsecond and irrelevant at ms scale.
-    if (typeof msg.E === "number") this.lag.add(recvMs - msg.E / 1e6);
 
     const bids: Level[] = Array.isArray(msg.b) ? msg.b : [];
     const asks: Level[] = Array.isArray(msg.a) ? msg.a : [];
@@ -355,6 +352,12 @@ export class FeedClient extends EventEmitter {
       this.counters.droppedByChaos++;
       return;
     }
+
+    // Sample lag on deltas only. The snapshot's E is when the book last
+    // changed, which on a quiet market can be minutes old.
+    // E is nanoseconds since epoch. It exceeds 2^53, so JSON.parse loses the
+    // last few digits, but that's sub-microsecond and irrelevant at ms scale.
+    if (typeof msg.E === "number") this.lag.add(recvMs - msg.E / 1e6);
 
     const prev = this.book.lastUpdateId!;
     const result = this.book.applyDelta(msg.U, msg.u, bids, asks);
