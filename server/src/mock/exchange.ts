@@ -118,16 +118,40 @@ export class MockExchange {
   // ------------------------------------------------------------------ HTTP
 
   private onHttp(req: http.IncomingMessage, res: http.ServerResponse): void {
-    if (req.method === "GET" && req.url?.startsWith("/v1/prediction-markets/events")) {
-      const byTitle = new Map<string, { instrumentSymbol: string; name: string; status: string }[]>();
-      for (const m of this.markets.values()) {
-        const list = byTitle.get(m.title) ?? [];
-        list.push({ instrumentSymbol: m.symbol, name: m.contract, status: "Active" });
-        byTitle.set(m.title, list);
-      }
-      const data = [...byTitle].map(([title, contracts]) => ({ title, contracts }));
+    const json = (body: unknown) => {
       res.writeHead(200, { "content-type": "application/json" });
-      res.end(JSON.stringify({ data }));
+      res.end(JSON.stringify(body));
+    };
+    if (req.method !== "GET") {
+      res.writeHead(404).end();
+      return;
+    }
+    if (req.url?.startsWith("/v1/prediction-markets/events")) {
+      const byTicker = new Map<string, { title: string; contracts: object[] }>();
+      for (const m of this.markets.values()) {
+        const ticker = eventTicker(m.symbol);
+        const event = byTicker.get(ticker) ?? { title: m.title, contracts: [] };
+        event.contracts.push({ instrumentSymbol: m.symbol, name: m.contract, status: "Active", marketState: "open" });
+        byTicker.set(ticker, event);
+      }
+      const data = [...byTicker].map(([ticker, e]) => ({ ticker, ...e }));
+      json({ data, pagination: { limit: 100, offset: 0, total: data.length } });
+      return;
+    }
+    if (req.url?.startsWith("/v1/prediction-markets/liquidity-rewards/config")) {
+      json({ max_spread_cents: 10, min_payout_threshold_usd: "1.00", enabled: true });
+      return;
+    }
+    if (req.url?.startsWith("/v1/prediction-markets/liquidity-rewards/events")) {
+      // One shared pool with a live event and an upcoming one (no book yet),
+      // and one single-event override without a pool_id, as on the live API.
+      const [btc, , eth] = MOCK_SYMBOLS.map((m) => eventTicker(m.symbol));
+      const events = [
+        { event_ticker: btc, title: "Bitcoin (mock)", daily_pool_usd: "150.00", pool_id: 7, pool_source: "category_default", pool_category_name: "Bitcoin (mock)", pool_event_count: 2, qualifying_maker_count: 3, ends_at: "2026-10-01T10:00:00Z" },
+        { event_ticker: "BTC05M2610011005", title: "Bitcoin (mock), next window", daily_pool_usd: "150.00", pool_id: 7, pool_source: "category_default", pool_category_name: "Bitcoin (mock)", pool_event_count: 2, qualifying_maker_count: 0, ends_at: "2026-10-01T10:05:00Z" },
+        { event_ticker: eth, title: "Ether (mock)", daily_pool_usd: "50.00", pool_source: "event_override", pool_event_count: 1, qualifying_maker_count: 1, ends_at: "2026-10-01T10:15:00Z" },
+      ];
+      json({ events, pagination: { limit: 100, offset: 0, total: events.length }, last_score_date: "2026-09-30" });
       return;
     }
     res.writeHead(404).end();
@@ -218,6 +242,8 @@ export class MockExchange {
       // Sent every tick, changed or not: Gemini publishes depth20@100ms on a timer.
       this.broadcast(`${key}@depth20@100ms`, {
         lastUpdateId: m.lastId,
+        // Not in the docs' example, but present on the live feed.
+        symbol: key,
         bids: sortLevels(m.bids, "desc").slice(0, 20),
         asks: sortLevels(m.asks, "asc").slice(0, 20),
       });
@@ -309,6 +335,11 @@ export class MockExchange {
       if (c.streams.has(stream) && c.ws.readyState === WebSocket.OPEN) c.ws.send(data);
     }
   }
+}
+
+/** "GEMI-BTC05M2610011000-UP" -> "BTC05M2610011000" */
+function eventTicker(symbol: string): string {
+  return symbol.replace(/^GEMI-/, "").replace(/-[^-]+$/, "");
 }
 
 function splitStream(stream: string): [string, string] {

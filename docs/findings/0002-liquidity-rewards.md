@@ -31,7 +31,9 @@ The docs give the snapshot score as `spread weight × size × two-sided multipli
 | (11 − d)² | 78.3% | 4.3% | 17.4% | 90× |
 | (12 − d)² | 74.4% | 9.3% | 16.4% | 28× |
 
-`1/d²`, zero beyond 10¢, reproduces all three shares within about a point, and matches the docs' separate remark that a quote 1.5¢ from mid "scores roughly 50× a quote 10¢ away". It is the model we use. It is still a fit, not a published formula. One open question is its behavior near d = 0, since a quote can't sit closer than half a tick from the mid.
+(This table gives B the two-sided bonus even though its bid is past the 10¢ limit. Under the stricter reading of the rules, where the bonus needs both quotes to qualify, `1/d²` gives 74.4% / 3.6% / 21.9%. The estimator follows the stricter reading.)
+
+`1/d²`, zero beyond 10¢, reproduces all three shares within about 1.5 points under either reading, and matches the docs' separate remark that a quote 1.5¢ from mid "scores roughly 50× a quote 10¢ away". It is the model we use. It is still a fit, not a published formula. One open question is its behavior near d = 0, since a quote can't sit closer than half a tick from the mid.
 
 ## Estimating a share from the public book
 
