@@ -116,11 +116,11 @@ Still unconfirmed: the contract status strings sent when a contract ends. Rollov
 
 The order book monitor is the foundation. Next up, each with a design doc before any code:
 
-1. **Many books over shared connections**: the foundation for everything below ([design 0001](docs/design/0001-multi-contract-feed.md)).
-2. **Market coherence monitor**: how tightly related contracts respect the rules of probability, and how fast breaks are corrected ([finding 0001](docs/findings/0001-market-coherence.md)).
-3. **Implied price distributions** from crypto strike ladders.
-4. **Market health scoreboard** across every live contract.
-5. **Liquidity rewards estimator** from public pool data.
+1. **Liquidity rewards estimator** *(in progress)*: rank Gemini's reward pools by what a given quote would earn, from public data only ([finding 0002](docs/findings/0002-liquidity-rewards.md)).
+2. **Many books over shared connections**: needed by the features below ([design 0001](docs/design/0001-multi-contract-feed.md), deferred until then).
+3. **Market coherence monitor**: how tightly related contracts respect the rules of probability, and how fast breaks are corrected ([finding 0001](docs/findings/0001-market-coherence.md)).
+4. **Implied price distributions** from crypto strike ladders.
+5. **Market health scoreboard** across every live contract.
 
 Smaller items: measure clock offset with the WebSocket `time` method instead of the minimum-lag estimate, and export metrics to Prometheus.
 

@@ -1,6 +1,8 @@
 # Design 0001: Many order books over shared connections
 
-*Status: proposed. 2026-09-30.*
+*Status: deferred. Proposed 2026-09-30.*
+
+> **Deferred.** The liquidity rewards estimator ([finding 0002](../findings/0002-liquidity-rewards.md)) came first because it only needs `depth20` snapshots, which the exchange already publishes per symbol. This design stays the plan for features that need full, sequence-verified books across many contracts, starting with the coherence monitor.
 
 ## Context
 
