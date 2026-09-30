@@ -1,5 +1,7 @@
 # Book integrity monitor
 
+[![CI](https://github.com/abhijaysharma/gemini-prediction-markets/actions/workflows/ci.yml/badge.svg)](https://github.com/abhijaysharma/gemini-prediction-markets/actions/workflows/ci.yml)
+
 A local order book for Gemini prediction markets that proves it's correct, notices when it isn't, and rebuilds itself.
 
 It streams Gemini's public market data over WebSocket, maintains an L2 order book from a snapshot plus sequenced deltas, and continuously checks that book against the exchange's own published top-of-book. A fault-injection panel lets you break it three different ways and watch each failure get caught by a different mechanism.
@@ -53,7 +55,7 @@ flowchart LR
 
 ## Run it
 
-Requires Node 18+. No API key; every stream used here is public.
+Requires Node 22+. No API key; every stream used here is public.
 
 ```bash
 npm install
