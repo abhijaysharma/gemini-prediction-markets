@@ -82,7 +82,7 @@ For a demo, pick a busy contract: on a quiet market no deltas arrive, so *Drop 3
 npm test
 ```
 
-40 tests. The unit tests cover the book (sequencing, stale and overlapping frames, level removal, decimal canonicalization, crossed-book detection), the integrity checker, and market discovery and rollover. The end-to-end tests run the real `FeedClient` over real sockets against a mock exchange that speaks the same protocol and holds the true book, then assert the client's book is identical after each fault: dropped updates, an exchange-side gap, silent corruption, a cut connection, the exchange dropping every client, and a symbol switch. The mock also has a quiet mode, as on a live market with no activity: the book stops changing but `depth20` snapshots keep arriving, which covers lag sampling, the stale-data watchdog, and faults on a quiet book.
+54 tests. The unit tests cover the book (sequencing, stale and overlapping frames, level removal, decimal canonicalization, crossed-book detection), the integrity checker, and market discovery and rollover. The end-to-end tests run the real `FeedClient` over real sockets against a mock exchange that speaks the same protocol and holds the true book, then assert the client's book is identical after each fault: dropped updates, an exchange-side gap, silent corruption, a cut connection, the exchange dropping every client, and a symbol switch. The mock also has a quiet mode, as on a live market with no activity: the book stops changing but `depth20` snapshots keep arriving, which covers lag sampling, the stale-data watchdog, and faults on a quiet book. The rewards tests pin the scoring model to the docs' worked example and run the whole estimator against the mock's reward endpoints.
 
 ## Layout
 
@@ -95,10 +95,36 @@ server/src/
   app.ts           wiring, rollover, dashboard state
   http.ts          API and state stream
   mock/exchange.ts protocol-compatible mock for tests and offline demos
+  rewards/         liquidity rewards: scoring model, pools, depth20 sampler, estimates
 web/src/           React dashboard
 test/              unit and end-to-end tests
-scripts/           discover.ts and record.ts for capturing live frames
+scripts/           rewards.ts (npm run rewards), discover.ts and record.ts
 ```
+
+## Liquidity rewards estimator
+
+Gemini pays daily USD pools to makers who keep quotes resting near the midpoint. It publishes the pools and the order books, but not how much a new quote would earn. This command estimates that for every pool, from public data only:
+
+```bash
+npm run rewards -- --size 100 --seconds 60
+```
+
+It reads the pools and their events, watches `depth20` for every contract in them, and asks, for each pool: *if I quoted 100 contracts at the best bid and ask of every two-sided contract here, what share of the pool would I win?* Pools are ranked by estimated dollars per day per $1,000 of collateral. From a live run on 2026-09-30:
+
+```
+Pool                                          Pool/day  Makers     Quoted    Share   Est/day   Capital   Per $1k
+Zcash                                             $150      10      37/37    13.7%       $21     $3558     $5.79
+Bitcoin                                           $150       5      49/53    11.0%       $17     $4755     $3.48
+Ether                                             $100       6      39/52     9.5%     $9.51     $3822     $2.49
+Politics                                           $50      21    146/226    38.3%       $19    $13844     $1.38
+Fantasy Football: 2026-27 Season Top QB            $50      21      17/20     0.6%     $0.31     $1675     $0.19
+```
+
+**How the score works.** Gemini scores each maker once a minute as `spread weight × size × two-sided multiplier`, but only describes the spread weight as "a quadratic curve". A weight of `1 / (cents from mid)²` reproduces the docs' worked example to within about a point and a half, where the obvious quadratics don't ([finding 0002](docs/findings/0002-liquidity-rewards.md)).
+
+**Why it errs low.** The public book merges every maker at a price, so the per-maker size cap can't be applied, and every competitor is assumed to earn the two-sided bonus. Both overstate the competition.
+
+**What it doesn't tell you.** Rewards are not profit. A resting quote gets filled, and on short-dated contracts mostly when the price is about to move against it. The estimate also assumes the book stays as it was during the sample, and that you meet the program's 50% uptime requirement.
 
 ## Verified on live data
 
@@ -116,7 +142,7 @@ Still unconfirmed: the contract status strings sent when a contract ends. Rollov
 
 The order book monitor is the foundation. Next up, each with a design doc before any code:
 
-1. **Liquidity rewards estimator** *(in progress)*: rank Gemini's reward pools by what a given quote would earn, from public data only ([finding 0002](docs/findings/0002-liquidity-rewards.md)).
+1. **Liquidity rewards estimator** *(first version done, see above)*: next, a dashboard view and tracking how each pool's competition changes through the day.
 2. **Many books over shared connections**: needed by the features below ([design 0001](docs/design/0001-multi-contract-feed.md), deferred until then).
 3. **Market coherence monitor**: how tightly related contracts respect the rules of probability, and how fast breaks are corrected ([finding 0001](docs/findings/0001-market-coherence.md)).
 4. **Implied price distributions** from crypto strike ladders.

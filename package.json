@@ -13,7 +13,8 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "discover": "tsx scripts/discover.ts",
-    "record": "tsx scripts/record.ts"
+    "record": "tsx scripts/record.ts",
+    "rewards": "tsx scripts/rewards.ts"
   },
   "dependencies": {
     "lucide-react": "^0.460.0",
