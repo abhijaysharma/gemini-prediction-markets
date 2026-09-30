@@ -151,6 +151,9 @@ export class FeedClient extends EventEmitter {
     this.state = "connecting";
     this.book.reset();
     this.integrity.resetPending();
+    // Both describe the old book, so neither may carry over into the new one.
+    this.consecutiveMismatches = 0;
+    this.wasCrossed = false;
 
     const url = new URL(this.url);
     // snapshot=-1: the first depth frame after subscribing is the full book.

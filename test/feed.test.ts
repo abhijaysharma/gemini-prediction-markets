@@ -119,6 +119,28 @@ describe("FeedClient fault handling", () => {
     await expectBooksEqual();
   });
 
+  it("does not carry a mismatch from the old book into the new one", async () => {
+    // Drive the exact sequence by hand: one mismatch, then a gap, then one
+    // mismatch on the rebuilt book. Only two mismatches on the SAME book
+    // should trigger a resync.
+    const inject = (frame: unknown) => (feed as any).onRaw(JSON.stringify(frame), Date.now());
+    const badRef = () => ({ lastUpdateId: feed.book.lastUpdateId, bids: [["0.01", "1"]], asks: [] });
+    mock.pause();
+    feed.start(SYMBOL);
+    await waitFor(() => feed.state === "live");
+
+    inject(badRef());
+    expect(feed.integrity.stats.mismatched).toBe(1);
+    const id = feed.book.lastUpdateId!;
+    inject({ e: "depthUpdate", E: Date.now() * 1e6, U: id + 5, u: id + 5, b: [], a: [] });
+    expect(feed.counters.resyncs).toBe(1);
+    await waitFor(() => feed.state === "live" && feed.recoveries.length >= 1);
+
+    inject(badRef());
+    expect(feed.integrity.stats.mismatched).toBe(2);
+    expect(feed.counters.resyncs).toBe(1);
+  });
+
   it("does not carry leftover dropped updates into a new connection", async () => {
     feed.start(SYMBOL);
     await waitFor(() => feed.state === "live");
