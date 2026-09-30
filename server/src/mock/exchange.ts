@@ -19,6 +19,8 @@ interface Market {
   mid: number;
   lastId: number;
   tradeId: number;
+  /** Event time (ns) of the last book change; the snapshot carries this as E. */
+  lastChangeNs: number;
 }
 
 interface Client {
@@ -46,6 +48,7 @@ export class MockExchange {
   private markets = new Map<string, Market>();
   private timer: NodeJS.Timeout | null = null;
   private paused = false;
+  private quiet = false;
   private rand: () => number;
   private readonly tickMs: number;
   port = 0;
@@ -82,6 +85,14 @@ export class MockExchange {
 
   resume(): void {
     this.paused = false;
+  }
+
+  /**
+   * A quiet market: the book stops changing, so no deltas or trades are sent,
+   * but depth20 snapshots keep arriving on their fixed timer, as on Gemini.
+   */
+  setQuiet(quiet: boolean): void {
+    this.quiet = quiet;
   }
 
   /** Burn update IDs without sending them, so every client sees a sequence gap. */
@@ -152,7 +163,7 @@ export class MockExchange {
             const m = this.market(sym)!;
             send(ws, {
               e: "depthUpdate",
-              E: nowNs(),
+              E: m.lastChangeNs,
               s: m.symbol,
               U: m.lastId,
               u: m.lastId,
@@ -185,30 +196,33 @@ export class MockExchange {
   private tick(): void {
     if (this.paused) return;
     for (const m of this.markets.values()) {
-      const changes = this.mutate(m);
-      if (changes.bids.size === 0 && changes.asks.size === 0) continue;
-
-      const U = m.lastId + 1;
-      m.lastId += changes.count;
-      const E = nowNs();
       const key = m.symbol.toLowerCase();
+      const changes = this.quiet ? null : this.mutate(m);
+      const changed = changes !== null && (changes.bids.size > 0 || changes.asks.size > 0);
 
-      this.broadcast(`${key}@depth@100ms`, {
-        e: "depthUpdate",
-        E,
-        s: m.symbol,
-        U,
-        u: m.lastId,
-        b: [...changes.bids].map(([p, q]) => [cents(p), String(q)]),
-        a: [...changes.asks].map(([p, q]) => [cents(p), String(q)]),
-      });
+      if (changed) {
+        const U = m.lastId + 1;
+        m.lastId += changes.count;
+        m.lastChangeNs = nowNs();
+        this.broadcast(`${key}@depth@100ms`, {
+          e: "depthUpdate",
+          E: m.lastChangeNs,
+          s: m.symbol,
+          U,
+          u: m.lastId,
+          b: [...changes.bids].map(([p, q]) => [cents(p), String(q)]),
+          a: [...changes.asks].map(([p, q]) => [cents(p), String(q)]),
+        });
+      }
+      // Sent every tick, changed or not: Gemini publishes depth20@100ms on a timer.
       this.broadcast(`${key}@depth20@100ms`, {
         lastUpdateId: m.lastId,
         bids: sortLevels(m.bids, "desc").slice(0, 20),
         asks: sortLevels(m.asks, "asc").slice(0, 20),
       });
 
-      if (this.rand() < 0.35) {
+      if (changed && this.rand() < 0.35) {
+        const E = m.lastChangeNs;
         const buy = this.rand() < 0.5;
         const price = buy ? minKey(m.asks) : maxKey(m.bids);
         if (price !== null) {
@@ -275,6 +289,7 @@ export class MockExchange {
       mid,
       lastId: 1_000_000 + Math.floor(this.rand() * 1_000_000),
       tradeId: 1_000_000,
+      lastChangeNs: nowNs(),
     };
     for (let i = 1; i <= 14; i++) {
       if (mid - i >= 1 && this.rand() < 0.85) m.bids.set(mid - i, this.qty());
