@@ -4,9 +4,9 @@ A local order book for Gemini prediction markets that proves it's correct, notic
 
 It streams Gemini's public market data over WebSocket, maintains an L2 order book from a snapshot plus sequenced deltas, and continuously checks that book against the exchange's own published top-of-book. A fault-injection panel lets you break it three different ways and watch each failure get caught by a different mechanism.
 
-![Dashboard after three injected faults (mock data)](docs/dashboard-mock.png)
+![Dashboard on a live Gemini contract after three injected faults](docs/dashboard-live.png)
 
-*Screenshot from mock mode. The red marks on the strip are the integrity check catching a silently corrupted book; the amber marks are rebuilds.*
+*Live data from a Gemini prediction market. The red marks on the integrity strip are the check catching a silently corrupted book; the amber marks are rebuilds.*
 
 ## Why
 
@@ -16,7 +16,7 @@ A local order book is only useful if it's exactly right. The failure modes that 
 
 ```mermaid
 flowchart LR
-  G[Gemini WebSocket<br/>wss://ws.gemini.com] -->|snapshot + depth deltas U..u| F[FeedClient]
+  G[Gemini WebSocket<br/>wss://ws.gemini.com] -->|snapshot + depth deltas| F[FeedClient]
   G -->|depth20 reference snapshots| F
   G -->|trades, contract status| F
   R[Gemini REST<br/>/v1/prediction-markets/events] -->|discovery + rollover| A[App]
@@ -28,7 +28,7 @@ flowchart LR
   D -->|fault injection| A
 ```
 
-**Sequencing.** The connection opens with `snapshot=-1`, so the first `depthUpdate` after subscribing carries the full book. Every later frame covers update IDs `U..u`. If a frame's `U` skips past the last applied `u`, updates were lost and the book is discarded. Frames entirely at or below the last applied ID are ignored as stale; partial overlaps are safe to apply because setting a level's size is idempotent.
+**Sequencing.** The connection opens with `snapshot=-1`, so the first `depthUpdate` after subscribing carries the full book, and its `u` is the last applied ID. On the live feed, each later frame's `U` equals the previous frame's `u`: a frame covers the IDs after `U` through `u`. So if a frame's `U` is past the last applied `u`, a frame was lost and the book is discarded. Frames entirely at or below the last applied ID are ignored as stale; overlaps are safe to apply because setting a level's size is idempotent. Update IDs are shared across every market on the exchange, so the size of a gap says nothing about how many of this book's updates were lost.
 
 **Resync on a fresh connection.** Recovery opens a new socket rather than unsubscribing and resubscribing. That costs a handshake (tens of milliseconds), but it guarantees no frame from the old subscription can arrive after the reset, so the first depth frame is unambiguously the new snapshot.
 
@@ -38,14 +38,16 @@ flowchart LR
 
 | Failure | How it's detected | Response |
 |---|---|---|
-| Dropped updates | Sequence gap (`U > last u + 1`) | Discard book, rebuild on a fresh connection |
+| Dropped updates | Sequence gap (`U > last u`) | Discard book, rebuild on a fresh connection |
 | Silent corruption | Local top 20 differs from the exchange's at the same update ID | Rebuild after two consecutive mismatches |
 | Connection drop | Socket close | Reconnect with exponential backoff and jitter |
 | Dead connection | No data for 30 s despite heartbeat pings | Rebuild |
 | Rebuild loop | Three rebuilds in 10 s | Back off for 2 s |
 | Contract expires | `contractStatus` stream, or contract delisted from REST | Roll over to the next contract in the same series |
 
-**Latency.** Feed lag is the exchange's event timestamp (nanoseconds) subtracted from local arrival time, so it includes any clock offset between this machine and Gemini's. Jitter (p99 lag minus the minimum observed lag) cancels a constant offset and is the more trustworthy number. Measured from a laptop over the public internet, these reflect the network more than the code.
+**Latency.** Feed lag is the exchange's event timestamp (nanoseconds) subtracted from local arrival time, sampled on deltas only. The snapshot is excluded because its timestamp is when the book last changed, which on a quiet market can be minutes old. Lag includes any clock offset between this machine and Gemini's; a clock that runs slightly fast even produces negative values. Jitter (p99 lag minus the minimum observed lag) cancels a constant offset and is the more trustworthy number. The dashboard holds these back until 20 deltas have arrived. Measured from a laptop over the public internet, they reflect the network more than the code.
+
+**Discovery.** With no `SYMBOL` set, the app reads the first page of active events and starts on the busiest contract: live events first, then by 24-hour volume. When a contract ends, it rolls over to the next one in the same series.
 
 ## Run it
 
@@ -63,13 +65,22 @@ To watch one fixed symbol instead of auto-discovering: `SYMBOL=<instrumentSymbol
 
 Production build: `npm run build && npm start` serves the dashboard and API from http://localhost:8787.
 
+## The dashboard
+
+- **Integrity strip** (top): one mark per check. Green is a pass, red a mismatch, amber a rebuild.
+- **Key metrics**: integrity pass rate, feed lag, messages per second, and the last rebuild time.
+- **Order book** (left): the local book's top levels. **Mid price** and **Trades** (center).
+- **Inject a fault** (right), with **Feed health** counters and the **Event log**, which narrates each detection and recovery.
+
+For a demo, pick a busy contract: on a quiet market no deltas arrive, so *Drop 3 updates* waits until real ones do. *Corrupt the local book* and *Cut the connection* work on any market.
+
 ## Tests
 
 ```bash
 npm test
 ```
 
-30 tests. The unit tests cover the book (sequencing, stale and overlapping frames, level removal, decimal canonicalization, crossed-book detection), the integrity checker, and market discovery and rollover. The end-to-end tests run the real `FeedClient` over real sockets against a mock exchange that speaks the same protocol and holds the true book, then assert the client's book is identical after each fault: dropped updates, an exchange-side gap, silent corruption, a cut connection, the exchange dropping every client, and a symbol switch.
+37 tests. The unit tests cover the book (sequencing, stale and overlapping frames, level removal, decimal canonicalization, crossed-book detection), the integrity checker, and market discovery and rollover. The end-to-end tests run the real `FeedClient` over real sockets against a mock exchange that speaks the same protocol and holds the true book, then assert the client's book is identical after each fault: dropped updates, an exchange-side gap, silent corruption, a cut connection, the exchange dropping every client, and a symbol switch. The mock also has a quiet mode, as on a live market with no activity: the book stops changing but `depth20` snapshots keep arriving, which covers lag sampling, the stale-data watchdog, and faults on a quiet book.
 
 ## Layout
 
@@ -87,13 +98,17 @@ test/              unit and end-to-end tests
 scripts/           discover.ts and record.ts for capturing live frames
 ```
 
-## Built against the docs, verified offline
+## Verified on live data
 
-The mock exchange implements the protocol as documented. These points are worth confirming against live traffic, and the code degrades visibly rather than silently if any are off:
+The mock was first written from the docs. Running against live Gemini traffic confirmed or corrected each assumption:
 
-- That the `depth20` reference stream's `lastUpdateId` shares a sequence with the differential stream's `u`. If not, checks show up as skipped rather than passed.
-- Contract status strings for ended contracts. Rollover also falls back to the REST listing.
-- The exact shape of the events response. Discovery walks the JSON for `instrumentSymbol` rather than assuming a schema.
+- **`depth20` lines up with the diff stream.** Its `lastUpdateId` shares a sequence with the deltas' `u`. On an in-progress MLB game, the checks that could be lined up passed every time except when a fault was injected. The share that couldn't be lined up, and so was skipped rather than passed, varied from under 1% in one session to about 22% in another.
+- **Frame numbering.** Each frame's `U` equals the previous frame's `u`, not `u + 1` (20 of 20 consecutive frames across five contracts). The gap check originally assumed `u + 1`, which could miss a lost frame spanning two IDs or fewer.
+- **IDs are exchange-wide.** Two contracts' frames ended on consecutive IDs, so dropping three frames showed up as a 1,389-ID gap.
+- **Quiet books.** `depth20@100ms` arrives every 100 ms even when nothing changes, and the snapshot's `E` is the time of the last change. Sampling that snapshot once made a quiet market report 132.9 s of lag.
+- **All three faults recover on live data**, with rebuilds of about 300 to 500 ms.
+
+Still unconfirmed: the contract status strings sent when a contract ends. Rollover also falls back to the REST listing.
 
 ## Next
 
