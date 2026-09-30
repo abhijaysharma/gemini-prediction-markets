@@ -1,3 +1,4 @@
+import { ChartCandlestick, ChevronDown, Layers } from "lucide-react";
 import type { MarketInfo, StatePayload } from "../../../server/src/types";
 import { post } from "../useStream";
 
@@ -8,14 +9,20 @@ export function TopBar({ state, markets, connected }: { state: StatePayload; mar
   }
 
   return (
-    <header className="topbar">
+    <header className="glass topbar">
       <div className="brand">
-        <h1>Book integrity monitor</h1>
-        <span className="muted">A self-healing local order book for Gemini prediction markets</span>
+        <span className="brand-mark" aria-hidden="true">
+          <Layers size={17} strokeWidth={1.5} />
+        </span>
+        <div>
+          <h1>Book integrity monitor</h1>
+          <p>Self-healing local order book for Gemini prediction markets</p>
+        </div>
       </div>
       <label className="picker">
-        <span className="muted">Market</span>
+        <ChartCandlestick size={15} strokeWidth={1.5} className="picker-icon" aria-hidden="true" />
         <select
+          aria-label="Market"
           value={state.symbol ?? ""}
           onChange={(e) => void post("/api/symbol", { symbol: e.target.value })}
           disabled={options.length === 0}
@@ -27,16 +34,17 @@ export function TopBar({ state, markets, connected }: { state: StatePayload; mar
             </option>
           ))}
         </select>
+        <ChevronDown size={15} strokeWidth={1.5} className="picker-chevron" aria-hidden="true" />
       </label>
       <div className="source">
         {state.mode === "mock" ? (
-          <span className="tag tag-mock" title="Synthetic data from the local mock exchange">
+          <span className="chip chip-warn" title="Synthetic data from the local mock exchange">
             Mock data
           </span>
         ) : (
-          <span className="tag tag-live">Live from ws.gemini.com</span>
+          <span className="chip chip-pos chip-live">Live · ws.gemini.com</span>
         )}
-        {!connected && <span className="tag tag-fault">Dashboard disconnected</span>}
+        {!connected && <span className="chip chip-neg">Dashboard disconnected</span>}
       </div>
     </header>
   );

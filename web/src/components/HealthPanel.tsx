@@ -1,46 +1,41 @@
+import type { ReactNode } from "react";
 import type { StatePayload } from "../../../server/src/types";
-import { fmtInt, fmtMs, median } from "../format";
+import { fmtInt } from "../format";
+import { Hint } from "./Hint";
 
-const STATE_LABEL: Record<StatePayload["feedState"], string> = {
-  idle: "Idle",
-  connecting: "Connecting",
-  syncing: "Waiting for snapshot",
-  live: "Live",
-  reconnecting: "Reconnecting",
+const FEED_STATE: Record<StatePayload["feedState"], { label: string; tone: string }> = {
+  idle: { label: "Idle", tone: "info" },
+  connecting: { label: "Connecting", tone: "info" },
+  syncing: { label: "Waiting for snapshot", tone: "warn" },
+  live: { label: "Live", tone: "pos" },
+  reconnecting: { label: "Reconnecting", tone: "warn" },
 };
 
 export function HealthPanel({ state }: { state: StatePayload }) {
-  const { counters: c, metrics: m, recovery: r, integrity: i } = state;
+  const { counters: c, integrity: i } = state;
+  const feed = FEED_STATE[state.feedState];
 
-  const rows: [string, string, string?][] = [
-    ["Feed", STATE_LABEL[state.feedState]],
-    ["Messages per second", m.msgPerSec.toFixed(1)],
-    [
-      "Feed lag, median and p99",
-      `${fmtMs(m.lagP50, 1)} / ${fmtMs(m.lagP99, 1)}`,
-      "Exchange event time to arrival here. Includes any offset between this machine's clock and Gemini's.",
-    ],
-    ["Jitter p99", fmtMs(m.jitterP99, 1), "Lag above the fastest message seen. Cancels out a constant clock offset."],
+  const rows: [string, ReactNode, string?][] = [
+    ["Feed", <span className={`chip chip-${feed.tone}`}>{feed.label}</span>],
     ["Gaps detected", fmtInt(c.gaps)],
     ["Rebuilds", fmtInt(c.resyncs)],
     ["Reconnects", fmtInt(c.reconnects)],
-    ["Rebuild time, last and median", `${fmtMs(r.lastMs)} / ${fmtMs(median(r.recentMs))}`],
     ["Checks we couldn't line up", fmtInt(i.skipped), "Reference snapshots with no exactly matching local update. Never counted as passes."],
     ["Crossed books seen", fmtInt(c.crossedBooks)],
     ["Last update ID", state.book.lastUpdateId !== null ? String(state.book.lastUpdateId) : "–"],
   ];
 
   return (
-    <section className="panel health">
+    <section className="glass panel health">
       <header className="panel-head">
         <h2>Feed health</h2>
       </header>
       <dl>
         {rows.map(([label, value, hint]) => (
-          <div key={label} className="stat" title={hint}>
+          <div key={label} className="stat">
             <dt>
               {label}
-              {hint && <span className="hint-dot" aria-hidden="true" />}
+              {hint && <Hint text={hint} />}
             </dt>
             <dd>{value}</dd>
           </div>

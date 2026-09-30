@@ -16,6 +16,7 @@
     "record": "tsx scripts/record.ts"
   },
   "dependencies": {
+    "lucide-react": "^0.460.0",
     "ws": "^8.18.0"
   },
   "devDependencies": {

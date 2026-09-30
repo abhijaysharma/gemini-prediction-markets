@@ -15,12 +15,12 @@ export function Ladder({ state }: { state: StatePayload }) {
   const bidRows: (Level | null)[] = [...bids, ...Array(ROWS - bids.length).fill(null)];
 
   return (
-    <section className="panel ladder">
+    <section className="glass panel ladder">
       <header className="panel-head">
         <h2>Order book</h2>
-        {isEventContract && <span className="muted">Prices are the YES side</span>}
+        {isEventContract && <span className="meta">YES side</span>}
       </header>
-      <div className="ladder-cols muted">
+      <div className="ladder-cols">
         <span>Price</span>
         <span>Size</span>
       </div>
@@ -31,18 +31,22 @@ export function Ladder({ state }: { state: StatePayload }) {
         <div className="spread">
           {book.spread !== null ? (
             <>
-              <span>Spread {trim(book.spread)}</span>
-              <span>Mid {trim(book.mid!)}</span>
+              <span>
+                Spread<strong>{trim(book.spread)}</strong>
+              </span>
+              <span>
+                Mid<strong>{trim(book.mid!)}</strong>
+              </span>
             </>
           ) : (
-            <span className="muted">No two-sided market</span>
+            <span>No two-sided market</span>
           )}
         </div>
         {bidRows.map((l, i) => (
           <Row key={`b${i}`} level={l} side="bid" maxQty={maxQty} />
         ))}
       </div>
-      <footer className="panel-foot muted">
+      <footer className="panel-foot">
         {book.bidLevels} bid and {book.askLevels} ask levels held locally
       </footer>
     </section>
