@@ -118,3 +118,7 @@ Still unconfirmed: the contract status strings sent when a contract ends. Rollov
 - Measure clock offset with the WebSocket `time` method instead of the minimum-lag estimate.
 - Track several contracts per connection, with per-symbol sequencing.
 - Export metrics to Prometheus.
+
+## License
+
+MIT. An independent project that uses Gemini's public market data; not affiliated with or endorsed by Gemini.
