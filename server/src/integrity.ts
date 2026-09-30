@@ -6,6 +6,8 @@ import type { CheckMark, IntegrityStats, Level } from "./types";
 export const REFERENCE_DEPTH = 20;
 const HISTORY_CAP = 160;
 
+export type CheckResult = "match" | "mismatch" | "healed";
+
 export interface ReferenceSnapshot {
   lastUpdateId: number;
   bids: Level[];
@@ -24,13 +26,17 @@ export interface ReferenceSnapshot {
 export class IntegrityChecker {
   stats: IntegrityStats = freshStats();
   private pending: ReferenceSnapshot | null = null;
+  /** The last comparison on the current book failed. */
+  private unresolvedMismatch = false;
 
+  /** Called whenever a new book starts building. */
   resetPending(): void {
     this.pending = null;
+    this.unresolvedMismatch = false;
   }
 
   resetAll(): void {
-    this.pending = null;
+    this.resetPending();
     this.stats = freshStats();
   }
 
@@ -39,7 +45,7 @@ export class IntegrityChecker {
     if (this.stats.history.length > HISTORY_CAP) this.stats.history.shift();
   }
 
-  onReference(ref: ReferenceSnapshot, book: OrderBook, now: number): "match" | "mismatch" | null {
+  onReference(ref: ReferenceSnapshot, book: OrderBook, now: number): CheckResult | null {
     const local = book.lastUpdateId;
     if (local === null) {
       this.stats.skipped++;
@@ -55,7 +61,7 @@ export class IntegrityChecker {
     return null;
   }
 
-  onBookAdvanced(book: OrderBook, now: number): "match" | "mismatch" | null {
+  onBookAdvanced(book: OrderBook, now: number): CheckResult | null {
     const local = book.lastUpdateId;
     if (!this.pending || local === null) return null;
     if (local === this.pending.lastUpdateId) {
@@ -70,7 +76,7 @@ export class IntegrityChecker {
     return null;
   }
 
-  private compare(ref: ReferenceSnapshot, book: OrderBook, now: number): "match" | "mismatch" {
+  private compare(ref: ReferenceSnapshot, book: OrderBook, now: number): CheckResult {
     const problem =
       diffSide("bid", ref.bids, book.topBids(REFERENCE_DEPTH)) ??
       diffSide("ask", ref.asks, book.topAsks(REFERENCE_DEPTH));
@@ -79,11 +85,20 @@ export class IntegrityChecker {
       this.stats.mismatched++;
       this.stats.last = "mismatch";
       this.stats.lastMismatch = `update ${ref.lastUpdateId}: ${problem}`;
+      this.unresolvedMismatch = true;
       this.mark("mismatch");
       return "mismatch";
     }
     this.stats.matched++;
     this.stats.last = "match";
+    // A pass right after a failure on the same book means a later update
+    // overwrote the bad level before a rebuild was needed.
+    if (this.unresolvedMismatch) {
+      this.unresolvedMismatch = false;
+      this.stats.healed++;
+      this.mark("healed");
+      return "healed";
+    }
     this.mark("match");
     return "match";
   }
@@ -110,6 +125,7 @@ function freshStats(): IntegrityStats {
   return {
     matched: 0,
     mismatched: 0,
+    healed: 0,
     skipped: 0,
     last: null,
     lastCheckedAt: null,

@@ -1,7 +1,7 @@
 import { EventEmitter } from "node:events";
 import WebSocket from "ws";
 import { normDecimal } from "./decimal";
-import { IntegrityChecker, type ReferenceSnapshot } from "./integrity";
+import { IntegrityChecker, type CheckResult, type ReferenceSnapshot } from "./integrity";
 import { RateMeter, Samples } from "./metrics";
 import { OrderBook } from "./orderbook";
 import type { Counters, FeedState, Level, LogEntry, Trade } from "./types";
@@ -395,9 +395,14 @@ export class FeedClient extends EventEmitter {
     this.handleIntegrity(this.integrity.onReference(ref, this.book, recvMs));
   }
 
-  private handleIntegrity(result: "match" | "mismatch" | null): void {
+  private handleIntegrity(result: CheckResult | null): void {
     if (result === "match") {
       this.consecutiveMismatches = 0;
+    } else if (result === "healed") {
+      this.consecutiveMismatches = 0;
+      this.info(
+        `Integrity check passed again at update ${this.book.lastUpdateId}: a later update corrected the book, so no rebuild was needed`,
+      );
     } else if (result === "mismatch") {
       this.consecutiveMismatches++;
       this.warn(`Integrity check failed at ${this.integrity.stats.lastMismatch}`);

@@ -141,6 +141,28 @@ describe("FeedClient fault handling", () => {
     expect(feed.counters.resyncs).toBe(1);
   });
 
+  it("reports corruption that a later update overwrites as healed, without a rebuild", async () => {
+    // What happens on a busy live book: the corrupted level changes again
+    // before a second check can fail.
+    const inject = (frame: unknown) => (feed as any).onRaw(JSON.stringify(frame), Date.now());
+    mock.pause();
+    feed.start(SYMBOL);
+    await waitFor(() => feed.state === "live");
+    const truth = { bids: feed.book.topBids(20), asks: feed.book.topAsks(20) };
+    const id = feed.book.lastUpdateId!;
+
+    feed.corruptBook();
+    inject({ lastUpdateId: id, ...truth });
+    expect(feed.integrity.stats.mismatched).toBe(1);
+    // The exchange sends a real update to the corrupted level.
+    inject({ e: "depthUpdate", E: Date.now() * 1e6, U: id, u: id + 1, b: [truth.bids[0]], a: [] });
+    inject({ lastUpdateId: id + 1, ...truth });
+
+    expect(feed.integrity.stats.healed).toBe(1);
+    expect(feed.counters.resyncs).toBe(0);
+    expect(feed.log.some((l) => l.msg.includes("no rebuild was needed"))).toBe(true);
+  });
+
   it("does not carry leftover dropped updates into a new connection", async () => {
     feed.start(SYMBOL);
     await waitFor(() => feed.state === "live");

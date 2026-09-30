@@ -19,6 +19,7 @@ export function HealthPanel({ state }: { state: StatePayload }) {
     ["Feed", <span className={`chip chip-${feed.tone}`}>{feed.label}</span>],
     ["Gaps detected", fmtInt(c.gaps)],
     ["Rebuilds", fmtInt(c.resyncs)],
+    ["Mismatches healed", fmtInt(i.healed), "A check failed, then a later update corrected the book before a second failure, so no rebuild was needed."],
     ["Reconnects", fmtInt(c.reconnects)],
     ["Checks we couldn't line up", fmtInt(i.skipped), "Reference snapshots with no exactly matching local update. Never counted as passes."],
     ["Crossed books seen", fmtInt(c.crossedBooks)],

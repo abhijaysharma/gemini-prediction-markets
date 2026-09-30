@@ -509,7 +509,13 @@ select {
   background: var(--warn);
 }
 
+.mark-healed,
+.legend .l-healed {
+  background: var(--info);
+}
+
 .mark-mismatch,
+.mark-healed,
 .mark-resync {
   height: 100%;
 }

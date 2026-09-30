@@ -20,11 +20,14 @@ export interface LogEntry {
   msg: string;
 }
 
-export type CheckMark = "match" | "mismatch" | "resync";
+/** "healed": a pass right after a mismatch, on the same book, with no rebuild in between. */
+export type CheckMark = "match" | "mismatch" | "healed" | "resync";
 
 export interface IntegrityStats {
   matched: number;
   mismatched: number;
+  /** Passes that followed a mismatch without a rebuild: a later update corrected the book. Also counted in matched. */
+  healed: number;
   /** Reference snapshots we couldn't line up with an exact local update ID. */
   skipped: number;
   last: "match" | "mismatch" | null;

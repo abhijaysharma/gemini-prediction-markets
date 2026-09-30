@@ -34,12 +34,14 @@ flowchart LR
 
 **Integrity check.** The client also subscribes to `{symbol}@depth20@100ms`, Gemini's periodic top-20 snapshot. A comparison only counts when the reference's `lastUpdateId` equals the local book's last applied ID, so both describe the same instant. References that are ahead are held until the book catches up; ones that can't be lined up exactly are counted as skipped, never as passes. Two consecutive mismatches trigger a rebuild.
 
+**Healed mismatches.** On a busy book, the level that went wrong often changes again within a fraction of a second. The exchange's next update overwrites the bad value, and the following check passes before a second one can fail. The book is correct again, so no rebuild happens, but the dashboard doesn't file this as an ordinary pass. It's reported separately as healed, because a book that keeps drifting and healing points to a real bug.
+
 **Prices as strings.** Prices and sizes stay as decimal strings, canonicalized so `"0.480"` and `"0.48"` are the same level. An L2 feed replaces sizes rather than adding to them, so no floating-point arithmetic ever touches book state.
 
 | Failure | How it's detected | Response |
 |---|---|---|
 | Dropped updates | Sequence gap (`U > last u`) | Discard book, rebuild on a fresh connection |
-| Silent corruption | Local top 20 differs from the exchange's at the same update ID | Rebuild after two consecutive mismatches |
+| Silent corruption | Local top 20 differs from the exchange's at the same update ID | Rebuild after two consecutive mismatches, or report it as healed if a later update corrects the book first |
 | Connection drop | Socket close | Reconnect with exponential backoff and jitter |
 | Dead connection | No data for 30 s despite heartbeat pings | Rebuild |
 | Rebuild loop | Three rebuilds in 10 s | Back off for 2 s |
@@ -67,7 +69,7 @@ Production build: `npm run build && npm start` serves the dashboard and API from
 
 ## The dashboard
 
-- **Integrity strip** (top): one mark per check. Green is a pass, red a mismatch, amber a rebuild.
+- **Integrity strip** (top): one mark per check. Green is a pass, red a mismatch, amber a rebuild, and indigo a mismatch that healed on its own (below).
 - **Key metrics**: integrity pass rate, feed lag, messages per second, and the last rebuild time.
 - **Order book** (left): the local book's top levels. **Mid price** and **Trades** (center).
 - **Inject a fault** (right), with **Feed health** counters and the **Event log**, which narrates each detection and recovery.
@@ -80,7 +82,7 @@ For a demo, pick a busy contract: on a quiet market no deltas arrive, so *Drop 3
 npm test
 ```
 
-37 tests. The unit tests cover the book (sequencing, stale and overlapping frames, level removal, decimal canonicalization, crossed-book detection), the integrity checker, and market discovery and rollover. The end-to-end tests run the real `FeedClient` over real sockets against a mock exchange that speaks the same protocol and holds the true book, then assert the client's book is identical after each fault: dropped updates, an exchange-side gap, silent corruption, a cut connection, the exchange dropping every client, and a symbol switch. The mock also has a quiet mode, as on a live market with no activity: the book stops changing but `depth20` snapshots keep arriving, which covers lag sampling, the stale-data watchdog, and faults on a quiet book.
+40 tests. The unit tests cover the book (sequencing, stale and overlapping frames, level removal, decimal canonicalization, crossed-book detection), the integrity checker, and market discovery and rollover. The end-to-end tests run the real `FeedClient` over real sockets against a mock exchange that speaks the same protocol and holds the true book, then assert the client's book is identical after each fault: dropped updates, an exchange-side gap, silent corruption, a cut connection, the exchange dropping every client, and a symbol switch. The mock also has a quiet mode, as on a live market with no activity: the book stops changing but `depth20` snapshots keep arriving, which covers lag sampling, the stale-data watchdog, and faults on a quiet book.
 
 ## Layout
 

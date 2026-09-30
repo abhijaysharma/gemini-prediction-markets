@@ -27,11 +27,12 @@ function summarize(s: StatePayload): { tone: Tone; status: string; headline: str
   }
   if (integrity.matched > 0) {
     const recovered = recovery.lastMs !== null ? ` Last rebuild took ${fmtMs(recovery.lastMs)}.` : "";
+    const healed = integrity.healed > 0 ? ` ${fmtInt(integrity.healed)} healed without a rebuild.` : "";
     return {
       tone: "pos",
       status: "Verified",
       headline: "Local book matches the exchange",
-      detail: `${fmtInt(integrity.matched)} checks passed, ${fmtInt(integrity.mismatched)} failed.${recovered}`,
+      detail: `${fmtInt(integrity.matched)} checks passed, ${fmtInt(integrity.mismatched)} failed.${healed}${recovered}`,
     };
   }
   return {
@@ -64,6 +65,10 @@ export function IntegrityStrip({ state }: { state: StatePayload }) {
             <span>
               <i className="l-mismatch" />
               Mismatch
+            </span>
+            <span>
+              <i className="l-healed" />
+              Healed
             </span>
             <span>
               <i className="l-resync" />
