@@ -112,12 +112,19 @@ The mock was first written from the docs. Running against live Gemini traffic co
 
 Still unconfirmed: the contract status strings sent when a contract ends. Rollover also falls back to the REST listing.
 
-## Next
+## Roadmap
 
-- Replay recorded live sessions (`npm run record`) as regression fixtures.
-- Measure clock offset with the WebSocket `time` method instead of the minimum-lag estimate.
-- Track several contracts per connection, with per-symbol sequencing.
-- Export metrics to Prometheus.
+The order book monitor is the foundation. Next up, each with a design doc before any code:
+
+1. **Many books over shared connections**: the foundation for everything below ([design 0001](docs/design/0001-multi-contract-feed.md)).
+2. **Market coherence monitor**: how tightly related contracts respect the rules of probability, and how fast breaks are corrected ([finding 0001](docs/findings/0001-market-coherence.md)).
+3. **Implied price distributions** from crypto strike ladders.
+4. **Market health scoreboard** across every live contract.
+5. **Liquidity rewards estimator** from public pool data.
+
+Smaller items: measure clock offset with the WebSocket `time` method instead of the minimum-lag estimate, and export metrics to Prometheus.
+
+Design docs live in [`docs/design`](docs/design), and measurements of live market behavior in [`docs/findings`](docs/findings).
 
 ## License
 
