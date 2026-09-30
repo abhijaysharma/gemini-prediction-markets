@@ -366,8 +366,9 @@ export class FeedClient extends EventEmitter {
     const result = this.book.applyDelta(msg.U, msg.u, bids, asks);
     if (result === "gap") {
       this.counters.gaps++;
-      const missed = msg.U - prev - 1;
-      this.resync(`missed ${missed} update${missed === 1 ? "" : "s"} (${prev + 1} to ${msg.U - 1})`);
+      // Update IDs are shared across every market on the exchange, so the
+      // size of this range says nothing about how many of OUR updates we lost.
+      this.resync(`missed updates (IDs ${prev + 1} to ${msg.U})`);
       return;
     }
     if (result === "stale") {
