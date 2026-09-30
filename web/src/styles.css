@@ -1,0 +1,541 @@
+:root {
+  --ink: #0f1b2d;
+  --panel: #152338;
+  --panel-raised: #1a2b44;
+  --rule: #273a55;
+  --text: #e7edf5;
+  --muted: #8fa2ba;
+  --bid: #3fc4a8;
+  --ask: #ef8269;
+  --caution: #e8b94a;
+  --fault: #e5484d;
+
+  --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --condensed: "IBM Plex Sans Condensed", "IBM Plex Sans", system-ui, sans-serif;
+
+  --step--1: 0.8125rem;
+  --step-0: 0.9375rem;
+  --step-1: 1.125rem;
+  --step-2: 1.5rem;
+
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  background: var(--ink);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: var(--step-0);
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+p {
+  margin: 0;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.small {
+  font-size: var(--step--1);
+}
+
+button,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--caution);
+  outline-offset: 2px;
+}
+
+/* ------------------------------------------------------------------ shell */
+
+.shell {
+  max-width: 1480px;
+  margin: 0 auto;
+  padding: 20px 24px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.boot {
+  min-height: 100vh;
+  display: grid;
+  place-content: center;
+  gap: 6px;
+  text-align: center;
+  padding: 24px;
+}
+
+.topbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px 28px;
+}
+
+.brand {
+  display: flex;
+  flex-direction: column;
+  margin-right: auto;
+}
+
+.brand h1 {
+  font-size: var(--step-1);
+  font-weight: 600;
+  letter-spacing: -0.005em;
+}
+
+.brand span {
+  font-size: var(--step--1);
+}
+
+.picker {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: var(--step--1);
+}
+
+.picker select {
+  background: var(--panel);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  padding: 7px 10px;
+  max-width: min(460px, 70vw);
+  font-size: var(--step--1);
+}
+
+.source {
+  display: flex;
+  gap: 8px;
+}
+
+.tag {
+  font-size: var(--step--1);
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  white-space: nowrap;
+}
+
+.tag-live {
+  color: var(--bid);
+}
+
+.tag-mock {
+  color: var(--caution);
+}
+
+.tag-fault {
+  color: var(--fault);
+}
+
+/* -------------------------------------------------------- integrity strip */
+/* The signature element: a running record of every correctness check. */
+
+.integrity {
+  --tone: var(--muted);
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) minmax(280px, 1.4fr);
+  gap: 20px 32px;
+  align-items: center;
+  padding: 18px 22px;
+  background: var(--panel);
+  border-radius: 10px;
+  border-left: 6px solid var(--tone);
+  transition: border-color 200ms ease;
+}
+
+.tone-ok {
+  --tone: var(--bid);
+}
+
+.tone-caution {
+  --tone: var(--caution);
+}
+
+.tone-fault {
+  --tone: var(--fault);
+}
+
+.integrity h2 {
+  font-size: var(--step-2);
+  font-weight: 600;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+  color: var(--tone);
+}
+
+.integrity-text p {
+  margin-top: 6px;
+  color: var(--text);
+  max-width: 62ch;
+}
+
+.tape-wrap {
+  min-width: 0;
+}
+
+.tape {
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  gap: 2px;
+  height: 44px;
+  overflow: hidden;
+  padding-bottom: 2px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.mark {
+  flex: 0 0 4px;
+  border-radius: 1px;
+}
+
+.mark-match {
+  height: 22px;
+  background: var(--bid);
+  opacity: 0.8;
+}
+
+.mark-mismatch {
+  height: 42px;
+  background: var(--fault);
+}
+
+.mark-resync {
+  height: 42px;
+  background: var(--caution);
+}
+
+.tape-caption {
+  margin-top: 6px;
+  font-size: var(--step--1);
+  color: var(--muted);
+}
+
+/* ------------------------------------------------------------------- grid */
+
+.grid {
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr) 340px;
+  gap: 16px;
+  align-items: start;
+}
+
+.center,
+.side {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.panel {
+  background: var(--panel);
+  border-radius: 8px;
+  padding: 14px 16px;
+  min-width: 0;
+}
+
+.panel-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.panel-head h2 {
+  font-size: var(--step-0);
+  font-weight: 600;
+}
+
+.panel-head .muted {
+  font-size: var(--step--1);
+}
+
+.panel-foot {
+  margin-top: 10px;
+  font-size: var(--step--1);
+}
+
+.empty {
+  padding: 18px 0;
+}
+
+/* ----------------------------------------------------------------- ladder */
+
+.ladder {
+  font-family: var(--condensed);
+  font-variant-numeric: tabular-nums;
+}
+
+.ladder-cols,
+.row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+
+.ladder-cols {
+  font-size: var(--step--1);
+  padding: 0 8px 6px;
+}
+
+.ladder-cols span:last-child,
+.row .qty {
+  text-align: right;
+}
+
+.row {
+  position: relative;
+  height: 24px;
+  align-items: center;
+  padding: 0 8px;
+}
+
+.row > span:not(.depth) {
+  position: relative;
+}
+
+.depth {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  right: 0;
+  border-radius: 2px;
+  opacity: 0.18;
+}
+
+.row-bid .depth {
+  background: var(--bid);
+}
+
+.row-ask .depth {
+  background: var(--ask);
+}
+
+.row-bid .price {
+  color: var(--bid);
+}
+
+.row-ask .price {
+  color: var(--ask);
+}
+
+.spread {
+  display: flex;
+  justify-content: space-between;
+  padding: 7px 8px;
+  margin: 4px 0;
+  background: var(--panel-raised);
+  border-radius: 4px;
+  font-size: var(--step--1);
+}
+
+/* ------------------------------------------------------------------ chart */
+
+.chart-last {
+  font-size: var(--step-1);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.chart-svg {
+  display: block;
+  width: 100%;
+  height: 150px;
+}
+
+.chart-line {
+  fill: none;
+  stroke: var(--text);
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+}
+
+.chart-guide {
+  stroke: var(--rule);
+  stroke-dasharray: 3 4;
+  vector-effect: non-scaling-stroke;
+}
+
+/* ----------------------------------------------------------------- trades */
+
+.tape-table {
+  max-height: 360px;
+  overflow-y: auto;
+  font-family: var(--condensed);
+  font-variant-numeric: tabular-nums;
+}
+
+.trade {
+  display: grid;
+  grid-template-columns: 5.5rem 3rem 1fr 1fr;
+  gap: 8px;
+  padding: 3px 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.trade .num {
+  text-align: right;
+}
+
+.trade-buy .side {
+  color: var(--bid);
+}
+
+.trade-sell .side {
+  color: var(--ask);
+}
+
+/* ----------------------------------------------------------------- faults */
+
+.faults p {
+  font-size: var(--step--1);
+}
+
+.fault-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0 4px;
+}
+
+.fault-buttons button {
+  background: transparent;
+  border: 1px solid var(--caution);
+  color: var(--caution);
+  border-radius: 4px;
+  padding: 7px 12px;
+  cursor: pointer;
+  font-size: var(--step--1);
+  font-weight: 500;
+}
+
+.fault-buttons button:hover:not(:disabled) {
+  background: rgba(232, 185, 74, 0.12);
+}
+
+.fault-buttons button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ----------------------------------------------------------------- health */
+
+.health dl {
+  margin: 0;
+}
+
+.stat {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--rule);
+  font-size: var(--step--1);
+}
+
+.stat:last-child {
+  border-bottom: none;
+}
+
+.stat dt {
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.stat dd {
+  margin: 0;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.hint-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--muted);
+  opacity: 0.6;
+}
+
+/* -------------------------------------------------------------------- log */
+
+.log-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 260px;
+  overflow-y: auto;
+  font-size: var(--step--1);
+}
+
+.log-list li {
+  display: grid;
+  grid-template-columns: 6.75rem 1fr;
+  gap: 8px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.log-list time {
+  font-variant-numeric: tabular-nums;
+}
+
+.log-warn span {
+  color: var(--caution);
+}
+
+.log-error span {
+  color: var(--fault);
+}
+
+/* ------------------------------------------------------------- responsive */
+
+@media (max-width: 1180px) {
+  .grid {
+    grid-template-columns: 300px minmax(0, 1fr);
+  }
+  .side {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .shell {
+    padding: 14px;
+  }
+  .grid,
+  .integrity {
+    grid-template-columns: 1fr;
+  }
+  .side {
+    display: flex;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+  }
+}
