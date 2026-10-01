@@ -1200,6 +1200,20 @@ select {
   font-weight: 600;
 }
 
+.pending {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
+.rewards-table .pm,
+.rewards-table .n {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--text-3);
+}
+
 .pool-name {
   color: var(--text-1);
   font-weight: 500;
