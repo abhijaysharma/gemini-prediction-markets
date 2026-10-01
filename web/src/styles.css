@@ -1195,6 +1195,11 @@ select {
   vertical-align: middle;
 }
 
+/* Ranges like "−$1,134 to −$202" must not break mid-number. */
+.rewards-table .table td.r {
+  white-space: nowrap;
+}
+
 .rewards-table .table td.strong {
   color: var(--text-1);
   font-weight: 600;

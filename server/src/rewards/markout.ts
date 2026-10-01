@@ -119,10 +119,14 @@ export type QueuedTrade = [qty: number, queueAhead: number];
  *   your fill = min(size, max(0, Q - queue ahead))
  * Small trades never reach you, and one huge trade can't fill more than you
  * offered. The queue is the one each trade actually met, not an average.
+ *
+ * That's the fewest fills you'd get. Your real place improves as orders
+ * ahead of you trade or cancel, and later arrivals wait behind you, so
+ * `atFront` gives the other bound: every trade reaches you first.
  */
-export function yourFillsPerDay(trades: QueuedTrade[], observedMs: number, size: number): number {
+export function yourFillsPerDay(trades: QueuedTrade[], observedMs: number, size: number, atFront = false): number {
   if (observedMs <= 0) return 0;
-  const filled = trades.reduce((s, [q, ahead]) => s + Math.min(size, Math.max(0, q - ahead)), 0);
+  const filled = trades.reduce((s, [q, ahead]) => s + Math.min(size, Math.max(0, q - (atFront ? 0 : ahead))), 0);
   return (filled / observedMs) * DAY_MS;
 }
 

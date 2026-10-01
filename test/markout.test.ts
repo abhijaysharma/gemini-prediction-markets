@@ -68,6 +68,8 @@ describe("markout", () => {
     ).toBeCloseTo(130 * 24, 9);
     // Each trade is judged against the queue it actually met.
     expect(yourFillsPerDay([[30, 0], [80, 500]], hour, 100)).toBeCloseTo(30 * 24, 9);
+    // At the front of the queue, every trade reaches us first, still capped at our size.
+    expect(yourFillsPerDay([[30, 50], [80, 50], [1000, 50]], hour, 100, true)).toBeCloseTo((30 + 80 + 100) * 24, 9);
     expect(yourFillsPerDay([[30, 0]], 0, 100)).toBe(0);
   });
 

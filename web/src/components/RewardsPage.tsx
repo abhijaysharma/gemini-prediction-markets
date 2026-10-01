@@ -14,11 +14,10 @@ type SortKey = "per1k" | "est" | "share" | "pool" | "makers" | "net";
 interface Row extends PoolOutlook {
   pool: RewardsPoolView;
   trend: { t: number; v: number }[];
-  /** Contracts of your quote expected to be traded against per day; null until volume is measured. */
-  yourFillsPerDay: number | null;
-  /** Reward plus fill P&L per day; null until there are enough trades. */
-  net: number | null;
-  fillPnl: number | null;
+  /** Your contracts filled per day, between staying at the back of the queue and being at the front. */
+  fills: { back: number; front: number } | null;
+  /** Reward plus fill P&L per day for each of those; null until there are enough trades. */
+  net: { back: number; front: number } | null;
 }
 
 const usd = (n: number) =>
@@ -55,16 +54,24 @@ function Ready(props: {
       }
       const o = outlook(pool.now, pool.dailyUsd, q);
       const f = pool.fills;
-      const fills = f.enoughObserved ? yourFillsPerDay(f.runTrades, f.observedMs, size) : null;
-      const fillPnl = fills === null ? null : fillPnlPerDay(f, fills);
+      const fills = f.enoughObserved
+        ? {
+            back: yourFillsPerDay(f.runTrades, f.observedMs, size),
+            front: yourFillsPerDay(f.runTrades, f.observedMs, size, true),
+          }
+        : null;
+      const pnlBack = fills && fillPnlPerDay(f, fills.back);
+      const pnlFront = fills && fillPnlPerDay(f, fills.front);
       rows.push({
         pool,
         ...o,
         // Share is recomputed for the chosen size at every point, since each point stores size-free inputs.
         trend: pool.history.map((h) => ({ t: h.t, v: outlook(h, pool.dailyUsd, q).share })),
-        yourFillsPerDay: fills,
-        fillPnl,
-        net: fillPnl === null ? null : o.estUsdPerDay + fillPnl,
+        fills,
+        net:
+          pnlBack === null || pnlFront === null || pnlBack === undefined || pnlFront === undefined
+            ? null
+            : { back: o.estUsdPerDay + pnlBack, front: o.estUsdPerDay + pnlFront },
       });
     }
     const by: Record<SortKey, (a: Row, b: Row) => number> = {
@@ -72,8 +79,8 @@ function Ready(props: {
       est: (a, b) => b.estUsdPerDay - a.estUsdPerDay,
       share: (a, b) => b.share - a.share,
       makers: (a, b) => a.pool.maxMakers - b.pool.maxMakers,
-      // Pools without enough trades to judge sort last.
-      net: (a, b) => (b.net ?? -Infinity) - (a.net ?? -Infinity),
+      // By the worse end of the range, so the ranking stays conservative; unjudged pools last.
+      net: (a, b) => worst(b.net) - worst(a.net),
       pool: (a, b) => a.pool.name.localeCompare(b.pool.name),
     };
     rows.sort(by[sort]);
@@ -182,7 +189,7 @@ function Ready(props: {
                   {th("per1k", "Reward per $1k", { right: true, hint: "Estimated reward per day for every $1,000 of collateral." })}
                   <th className="r">
                     Your fills/day
-                    <Hint text="Contracts of your quote that this run's trades would have filled, per day. You join the back of the queue at the best price, so a trade only reaches you after filling everything resting ahead of you." />
+                    <Hint text="Contracts of your quote this run's trades would have filled, per day. The low end keeps you at the back of the queue, where a trade only reaches you after everything resting ahead of you; the high end puts you at the front. Your real place is in between and improves the longer you wait." />
                   </th>
                   <th className="r">
                     Maker P&amp;L per fill
@@ -192,7 +199,7 @@ function Ready(props: {
                   </th>
                   {th("net", "Net/day", {
                     right: true,
-                    hint: `Reward plus expected fill P&L. Shown once a pool has ${r.minTrades} trades and 10 minutes of volume.`,
+                    hint: `Reward plus fill P&L, from the back of the queue to the front. Shown once a pool has ${r.minTrades} trades and 10 minutes of volume. Sorts by the worse end.`,
                   })}
                   <th>{trendSpan(rows)}</th>
                 </tr>
@@ -215,13 +222,15 @@ function Ready(props: {
                     <td className="r">{usd(x.estUsdPerDay)}</td>
                     <td className="r">{usd(x.capital)}</td>
                     <td className="r strong">{usd(x.usdPerDayPer1k)}</td>
-                    <td className="r">{x.yourFillsPerDay === null ? <Pending text="measuring" /> : fmtInt(Math.round(x.yourFillsPerDay))}</td>
+                    <td className="r">
+                      {x.fills === null ? <Pending text="measuring" /> : range(x.fills.back, x.fills.front, (n) => fmtInt(Math.round(n)))}
+                    </td>
                     <td className="r">
                       <MakerPnl fills={x.pool.fills} minTrades={r.minTrades} />
                     </td>
                     <td className="r strong">
                       {x.net !== null ? (
-                        signedUsd(x.net)
+                        range(x.net.back, x.net.front, signedUsd)
                       ) : x.pool.fills.trades < r.minTrades ? (
                         <Pending text={`${x.pool.fills.trades}/${r.minTrades} trades`} />
                       ) : (
@@ -260,8 +269,9 @@ function Ready(props: {
           <li>Estimates assume the book stays as it is and that you meet the program's 50% uptime requirement.</li>
           <li>
             Fill P&amp;L marks each trade {lastHorizon} seconds later. It doesn't capture holding a position to
-            settlement, where a contract jumps to $0 or $1. Fills assume you wait behind everything resting at your price
-            when each trade arrived (from a snapshot up to a second old), and a quote that never moves.
+            settlement, where a contract jumps to $0 or $1. Fills are a range: from waiting behind everything resting at
+            your price when each trade arrived (a snapshot up to a second old) to being first in line, for a quote that
+            never moves. Real makers who track the price would do differently.
           </li>
           <li>
             Trading volume is measured over this run only and scaled to a day, and markouts over the last week. Trades
@@ -293,6 +303,16 @@ function Pending({ text }: { text: string }) {
 
 function signedUsd(n: number): string {
   return `${n < 0 ? "−" : ""}${usd(Math.abs(n))}`;
+}
+
+/** "a to b", lowest first, or a single value when both ends agree. */
+function range(a: number, b: number, fmt: (n: number) => string): string {
+  const [lo, hi] = a <= b ? [a, b] : [b, a];
+  return fmt(lo) === fmt(hi) ? fmt(lo) : `${fmt(lo)} to ${fmt(hi)}`;
+}
+
+function worst(net: Row["net"]): number {
+  return net === null ? -Infinity : Math.min(net.back, net.front);
 }
 
 function Starting({ rewards }: { rewards: RewardsState | null }) {
