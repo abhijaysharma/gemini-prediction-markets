@@ -16,6 +16,7 @@ export function TopBar({
   setView: (v: View) => void;
 }) {
   const options = [...markets];
+  const current = markets.find((m) => m.symbol === state.symbol);
   if (state.symbol && !options.some((m) => m.symbol === state.symbol)) {
     options.unshift({ symbol: state.symbol, title: null, status: null, live: false, volume24h: 0 });
   }
@@ -49,15 +50,23 @@ export function TopBar({
           </button>
         ))}
       </nav>
-      {view === "book" && (
+      {view === "book" && state.publicDemo && (
+        // A shared demo can't let one visitor switch everyone's market, and a
+        // disabled dropdown looks broken, so say what it's showing instead.
+        <div className="picker picker-static" title="Run it locally to pick any market">
+          <ChartCandlestick size={15} strokeWidth={1.5} className="picker-icon" aria-hidden="true" />
+          <span className="picker-text">{current?.title ?? state.symbol ?? "Discovering markets"}</span>
+          <span className="chip chip-info">Auto: busiest live market</span>
+        </div>
+      )}
+      {view === "book" && !state.publicDemo && (
         <label className="picker">
           <ChartCandlestick size={15} strokeWidth={1.5} className="picker-icon" aria-hidden="true" />
           <select
             aria-label="Market"
             value={state.symbol ?? ""}
             onChange={(e) => void post("/api/symbol", { symbol: e.target.value })}
-            disabled={options.length === 0 || state.publicDemo}
-            title={state.publicDemo ? "The public demo follows the busiest live market. Run it locally to pick one." : undefined}
+            disabled={options.length === 0}
           >
             {options.length === 0 && <option value="">Discovering markets</option>}
             {options.map((m) => (

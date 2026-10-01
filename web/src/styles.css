@@ -377,6 +377,26 @@ select {
   left: 14px;
 }
 
+.picker-static {
+  gap: 10px;
+  width: min(520px, 70vw);
+  height: 36px;
+  padding: 0 6px 0 38px;
+  background: var(--glass-1);
+  border: 1px solid var(--glass-border);
+  border-radius: 999px;
+  font-size: 13px;
+  cursor: default;
+}
+
+.picker-static .picker-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .picker .picker-chevron {
   right: 14px;
 }
