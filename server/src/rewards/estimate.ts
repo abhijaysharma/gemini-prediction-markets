@@ -18,6 +18,8 @@ export interface PoolSample {
   competing: number;
   /** Collateral for one contract on each side of every quoted contract. */
   capitalPerContract: number;
+  /** Contracts resting at the touch, per side, summed over quoted contracts. */
+  touchSize: number;
   contractsQuoted: number;
   oneSided: number;
   noBook: number;
@@ -40,7 +42,7 @@ export function samplePool(
   bookOf: (symbol: string) => { bids: Level[]; asks: Level[] } | undefined,
   maxSpreadCents: number,
 ): PoolSample | null {
-  const s: PoolSample = { quoteWeight: 0, competing: 0, capitalPerContract: 0, contractsQuoted: 0, oneSided: 0, noBook: 0 };
+  const s: PoolSample = { quoteWeight: 0, competing: 0, capitalPerContract: 0, touchSize: 0, contractsQuoted: 0, oneSided: 0, noBook: 0 };
   for (const symbol of symbols) {
     const book = bookOf(symbol);
     if (!book) {
@@ -57,6 +59,7 @@ export function samplePool(
     s.quoteWeight += weight;
     s.competing += competingScore(book.bids, book.asks, top.mid, maxSpreadCents);
     s.capitalPerContract += quoteCapital(top, 1);
+    s.touchSize += (top.bestBidSize + top.bestAskSize) / 2;
     s.contractsQuoted++;
   }
   return s.quoteWeight > 0 ? s : null;
@@ -94,6 +97,7 @@ export function medianSample(samples: PoolSample[]): PoolSample | null {
     quoteWeight: med("quoteWeight"),
     competing: med("competing"),
     capitalPerContract: med("capitalPerContract"),
+    touchSize: med("touchSize"),
     contractsQuoted: Math.round(med("contractsQuoted")),
     oneSided: Math.round(med("oneSided")),
     noBook: Math.round(med("noBook")),

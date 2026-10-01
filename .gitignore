@@ -1,4 +1,5 @@
 node_modules
 recordings
+data
 web/dist
 .env
