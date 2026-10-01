@@ -7,7 +7,7 @@ import { MockExchange } from "../server/src/mock/exchange";
 import { medianSample, outlook, samplePool, shareFor } from "../server/src/rewards/estimate";
 import { collectContracts, groupPools } from "../server/src/rewards/pools";
 import { estimateRewards } from "../server/src/rewards/run";
-import { RewardsTracker } from "../server/src/rewards/tracker";
+import { downsample, RewardsTracker } from "../server/src/rewards/tracker";
 import { competingScore, quoteScore, spreadWeight, topOfBook, TWO_SIDED_MULTIPLIER } from "../server/src/rewards/scoring";
 import type { Level } from "../server/src/types";
 
@@ -246,6 +246,41 @@ describe("rewards against the mock exchange", () => {
     }
   }, 20_000);
 
+  it("stops when nobody asks, starts again on the next request, and doesn't double-count saved fills", async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "fills-"));
+    const fillsFile = path.join(dir, "fills.ndjson");
+    const saved = (n: number) =>
+      Array.from({ length: n }, (_, i) =>
+        JSON.stringify({ poolId: "pool:7", symbol: "X", at: Date.now() - 1000 - i, price: 0.5, qty: 1, takerBuy: true, markoutCents: [0, 0, 0] }),
+      ).join("\n") + "\n";
+    writeFileSync(fillsFile, saved(5));
+    const tracker = new RewardsTracker({
+      restUrl: `http://127.0.0.1:${port}`,
+      wsUrl: `ws://127.0.0.1:${port}`,
+      stream: "depth20@100ms",
+      sampleEveryMs: 50,
+      idleStopMs: 300,
+      fillsFile,
+    });
+    const savedTrades = () => tracker.state().pools.find((p) => p.id === "pool:7")!.fills.trades;
+    try {
+      tracker.ensureStarted();
+      await waitFor(() => tracker.state().status === "ready", 5000);
+      expect(savedTrades()).toBeGreaterThanOrEqual(5);
+      await waitFor(() => tracker.state().status === "idle", 3000);
+      expect(tracker.state().contractsWatched).toBe(0);
+
+      tracker.ensureStarted();
+      await waitFor(() => tracker.state().status === "ready", 5000);
+      // The saved fills were read once; a restart must not add them again.
+      expect(savedTrades()).toBeLessThan(10);
+      expect(tracker.state().contractsWatched).toBe(3);
+    } finally {
+      tracker.stop();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }, 20_000);
+
   it("refuses a size below the program minimum", async () => {
     await expect(
       estimateRewards({ restUrl: `http://127.0.0.1:${port}`, wsUrl: `ws://127.0.0.1:${port}`, size: 5, seconds: 1 }),
@@ -274,5 +309,15 @@ describe("fill store", () => {
     // The file was rewritten without the stale and broken lines.
     expect(readFileSync(file, "utf8").trim().split("\n")).toHaveLength(1);
     rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+describe("trend downsampling", () => {
+  it("keeps short trends whole, and long ones evenly spaced from first to latest", () => {
+    expect(downsample([1, 2, 3], 120)).toEqual([1, 2, 3]);
+    const day = Array.from({ length: 1440 }, (_, i) => i);
+    const out = downsample(day, 120);
+    expect(out).toHaveLength(120);
+    expect([out[0], out[119]]).toEqual([0, 1439]);
   });
 });
