@@ -31,6 +31,13 @@ export interface TrackerOptions {
   fillsFile?: string;
   /** Watch a pool this long before extrapolating its trading volume to a day. */
   minObserveMs?: number;
+  /**
+   * Stop measuring after this long with no one asking for the state, and
+   * start again on the next request. For a shared deployment: watching
+   * ~1,000 contracts pulls ~15 GB a day from Gemini, which nobody needs
+   * while nobody is looking. Off by default.
+   */
+  idleStopMs?: number;
   horizonsS?: readonly number[];
   log?: (msg: string) => void;
 }
@@ -38,6 +45,15 @@ export interface TrackerOptions {
 const RETRY_LOOKUP_MS = 5 * 60_000;
 const KEEP_FILLS_MS = 7 * 24 * 60 * 60 * 1000;
 const MAX_RUN_TRADES = 5_000;
+/** Trend points sent per pool. The sparkline is ~110 px wide; a day of minutes would be ~3 MB a poll. */
+const TREND_POINTS = 120;
+
+/** Evenly spaced points, always keeping the latest. */
+export function downsample<T>(points: T[], max: number): T[] {
+  if (points.length <= max) return points;
+  const step = (points.length - 1) / (max - 1);
+  return Array.from({ length: max }, (_, i) => points[Math.round(i * step)]);
+}
 
 /**
  * Measures every liquidity reward pool continuously and keeps a short trend
@@ -63,13 +79,15 @@ export class RewardsTracker {
   private tradesThisRun = new Map<string, { at: number; qty: number; queueAhead: number }[]>();
   private watchedSince = new Map<string, number>();
   private store: FillStore | null;
-  private sampler: DepthSampler;
+  private storeLoaded = false;
+  /** Created on each start, so the tracker can stop when idle and start again. */
+  private sampler: DepthSampler | null = null;
+  private lastWantedAt = 0;
   private timers: NodeJS.Timeout[] = [];
   private refreshing = false;
   private readonly log: (msg: string) => void;
 
   constructor(private opts: TrackerOptions) {
-    this.sampler = new DepthSampler({ url: opts.wsUrl, stream: opts.stream, onTrade: (t) => this.onTrade(t) });
     this.store = opts.fillsFile ? new FillStore(opts.fillsFile) : null;
     this.markouts = new MarkoutTracker(opts.horizonsS ?? HORIZONS_S);
     this.log = opts.log ?? (() => {});
@@ -77,11 +95,13 @@ export class RewardsTracker {
 
   /** Start on first use, so the dashboard costs Gemini nothing until someone opens the Rewards tab. */
   ensureStarted(): void {
+    this.lastWantedAt = Date.now();
     if (this.status === "idle") void this.start();
   }
 
   async start(): Promise<void> {
     if (this.status === "starting" || this.status === "ready") return;
+    this.lastWantedAt = Date.now();
     this.status = "starting";
     this.message = "Reading reward pools and mapping their events to contracts";
     this.startedAt = Date.now();
@@ -89,10 +109,15 @@ export class RewardsTracker {
       const config = await fetchRewardsConfig(this.opts.restUrl);
       if (!config.enabled) throw new Error("the liquidity rewards program is not enabled");
       this.maxSpreadCents = config.maxSpreadCents;
-      for (const r of this.store?.load() ?? []) this.fills.set(r.poolId, [...(this.fills.get(r.poolId) ?? []), r]);
+      // Saved fills are read once per process; after an idle stop they're already in memory.
+      if (!this.storeLoaded) {
+        for (const r of this.store?.load() ?? []) this.fills.set(r.poolId, [...(this.fills.get(r.poolId) ?? []), r]);
+        this.storeLoaded = true;
+      }
       this.pools = await fetchPools(this.opts.restUrl);
       // One pass over every listing page up front; newly listed events are looked up one by one later.
       this.contracts = await fetchContractsByEvent(this.opts.restUrl);
+      this.sampler = new DepthSampler({ url: this.opts.wsUrl, stream: this.opts.stream, onTrade: (t) => this.onTrade(t) });
       this.syncSymbols();
       this.log(`Rewards: ${this.pools.length} pools, watching ${this.sampler.symbolCount} contracts`);
     } catch (err) {
@@ -115,12 +140,37 @@ export class RewardsTracker {
         void this.refresh();
       }, this.opts.minuteMs ?? 60_000),
     );
+    const idle = this.opts.idleStopMs;
+    if (idle !== undefined) {
+      this.timers.push(
+        setInterval(() => {
+          if (Date.now() - this.lastWantedAt > idle) this.goIdle();
+        }, Math.min(idle, 30_000)),
+      );
+    }
   }
 
   stop(): void {
     for (const t of this.timers) clearTimeout(t);
     this.timers = [];
-    this.sampler.stop();
+    this.sampler?.stop();
+    this.sampler = null;
+  }
+
+  /**
+   * Stop watching until someone asks again. Saved fills and trend points are
+   * kept; anything that assumed continuous watching is dropped: the live
+   * window, fills still waiting for their markouts, and this run's volume,
+   * which would otherwise be averaged over time nobody was counting.
+   */
+  private goIdle(): void {
+    this.stop();
+    this.status = "idle";
+    this.windows.clear();
+    this.markouts = new MarkoutTracker(this.opts.horizonsS ?? HORIZONS_S);
+    this.tradesThisRun.clear();
+    this.watchedSince.clear();
+    this.log("Rewards: no one watching, stopped until the next visit");
   }
 
   state(): RewardsState {
@@ -134,8 +184,8 @@ export class RewardsTracker {
       minSize: MIN_SIZE,
       horizonsS: this.opts.horizonsS ?? HORIZONS_S,
       minTrades: MIN_TRADES,
-      contractsWatched: this.sampler.symbolCount,
-      failedSubscriptions: this.sampler.failed.size,
+      contractsWatched: this.sampler?.symbolCount ?? 0,
+      failedSubscriptions: this.sampler?.failed.size ?? 0,
       pools: this.pools.map((p) => this.view(p)),
     };
   }
@@ -152,7 +202,7 @@ export class RewardsTracker {
       for (const s of symbols) this.poolOfSymbol.set(s.toUpperCase(), pool.id);
       if (symbols.length && !this.watchedSince.has(pool.id)) this.watchedSince.set(pool.id, now);
     }
-    this.sampler.setSymbols(this.poolOfSymbol.keys());
+    this.sampler?.setSymbols(this.poolOfSymbol.keys());
   }
 
   private onTrade(t: SampledTrade): void {
@@ -161,7 +211,7 @@ export class RewardsTracker {
     this.markouts.add({ poolId, symbol: t.symbol, at: t.at, price: t.price, qty: t.qty, takerBuy: t.takerBuy });
     // The queue a new quote would have waited behind: what rested at the price this trade hit.
     // A buyer lifts the asks, a seller hits the bids. The snapshot is up to a second old.
-    const book = this.sampler.get(t.symbol);
+    const book = this.sampler?.get(t.symbol);
     const top = book ? topOfBook(book.bids, book.asks) : null;
     if (!top) return; // no two-sided book to measure the queue against
     const run = this.tradesThisRun.get(poolId) ?? [];
@@ -174,7 +224,7 @@ export class RewardsTracker {
   /** Mark pending fills against the current mids, and keep the ones that are done. */
   private markFills(now: number): void {
     const done = this.markouts.resolve(now, (symbol) => {
-      const book = this.sampler.get(symbol);
+      const book = this.sampler?.get(symbol);
       return book ? topOfBook(book.bids, book.asks)?.mid : undefined;
     });
     if (done.length === 0) return;
@@ -204,7 +254,7 @@ export class RewardsTracker {
   private sample(): void {
     const size = this.opts.windowSize ?? 60;
     for (const pool of this.pools) {
-      const s = samplePool(this.symbolsOf(pool), (sym) => this.sampler.get(sym), this.maxSpreadCents);
+      const s = samplePool(this.symbolsOf(pool), (sym) => this.sampler?.get(sym), this.maxSpreadCents);
       const w = this.windows.get(pool.id) ?? [];
       // An empty sample still has to push old ones out, or a pool that stops
       // trading would keep showing its last estimate.
@@ -275,7 +325,7 @@ export class RewardsTracker {
       maxMakers: Math.max(0, ...pool.events.map((e) => e.qualifyingMakers)),
       contractsTotal: this.symbolsOf(pool).length,
       now: this.now(pool.id),
-      history: this.history.get(pool.id) ?? [],
+      history: downsample(this.history.get(pool.id) ?? [], TREND_POINTS),
       fills: this.fillsView(pool.id),
     };
   }

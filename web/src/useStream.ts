@@ -1,7 +1,11 @@
 import { useEffect, useState } from "react";
 import type { MarketInfo, RewardsState, StatePayload } from "../../server/src/types";
 
-/** Subscribes to the server's state stream and reconnects if it drops. */
+/**
+ * Subscribes to the server's state stream and reconnects if it drops. A tab
+ * in the background disconnects, since nobody is watching it, and reconnects
+ * when it's visible again.
+ */
 export function useStream() {
   const [state, setState] = useState<StatePayload | null>(null);
   const [connected, setConnected] = useState(false);
@@ -12,19 +16,34 @@ export function useStream() {
     let closed = false;
 
     const open = () => {
+      if (ws || document.hidden) return;
       const proto = location.protocol === "https:" ? "wss" : "ws";
-      ws = new WebSocket(`${proto}://${location.host}/stream`);
-      ws.onopen = () => setConnected(true);
-      ws.onmessage = (ev) => setState(JSON.parse(ev.data));
-      ws.onclose = () => {
+      const socket = new WebSocket(`${proto}://${location.host}/stream`);
+      ws = socket;
+      socket.onopen = () => setConnected(true);
+      socket.onmessage = (ev) => setState(JSON.parse(ev.data));
+      socket.onclose = () => {
+        if (ws === socket) ws = null;
         setConnected(false);
         if (!closed) retry = window.setTimeout(open, 1000);
       };
     };
+    const onVisibility = () => {
+      if (document.hidden) {
+        window.clearTimeout(retry);
+        const socket = ws;
+        ws = null;
+        socket?.close();
+      } else {
+        open();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
     open();
 
     return () => {
       closed = true;
+      document.removeEventListener("visibilitychange", onVisibility);
       window.clearTimeout(retry);
       ws?.close();
     };
@@ -60,22 +79,30 @@ export async function post(path: string, body: unknown = {}) {
   });
 }
 
-/** Polls the server's reward estimates while the Rewards tab is open. The first call starts the tracker. */
+/**
+ * Polls the server's reward estimates while the Rewards tab is open and
+ * visible. The first call starts the tracker; a public deployment stops it
+ * again once nobody has polled for a while, so a hidden tab mustn't poll.
+ */
 export function useRewards(active: boolean) {
   const [rewards, setRewards] = useState<RewardsState | null>(null);
   useEffect(() => {
     if (!active) return;
     let alive = true;
-    const load = () =>
+    const load = () => {
+      if (document.hidden) return;
       fetch("/api/rewards")
         .then((r) => r.json())
         .then((s) => alive && setRewards(s))
         .catch(() => {});
+    };
     load();
     const t = window.setInterval(load, 5_000);
+    document.addEventListener("visibilitychange", load);
     return () => {
       alive = false;
       window.clearInterval(t);
+      document.removeEventListener("visibilitychange", load);
     };
   }, [active]);
   return rewards;
