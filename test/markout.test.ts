@@ -61,12 +61,14 @@ describe("markout", () => {
 
   it("fills a quote at the back of the queue only with what's left of each trade", () => {
     const hour = 3_600_000;
-    // 50 resting ahead of a 100-lot. A 30-lot never reaches us, an 80-lot leaves us 30,
-    // and a 1,000-lot fills all 100 of ours but no more: 130 contracts in an hour.
-    expect(yourFillsPerDay([30, 80, 1000], hour, 100, 50)).toBeCloseTo(130 * 24, 9);
-    // Nothing ahead of us: every trade reaches us, capped at our size.
-    expect(yourFillsPerDay([30, 80, 1000], hour, 100, 0)).toBeCloseTo((30 + 80 + 100) * 24, 9);
-    expect(yourFillsPerDay([30], 0, 100, 0)).toBe(0);
+    // A 30-lot into a 50-lot queue never reaches us, an 80-lot leaves us 30, and a
+    // 1,000-lot fills all 100 of ours but no more: 130 contracts in an hour.
+    expect(
+      yourFillsPerDay([[30, 50], [80, 50], [1000, 50]], hour, 100),
+    ).toBeCloseTo(130 * 24, 9);
+    // Each trade is judged against the queue it actually met.
+    expect(yourFillsPerDay([[30, 0], [80, 500]], hour, 100)).toBeCloseTo(30 * 24, 9);
+    expect(yourFillsPerDay([[30, 0]], 0, 100)).toBe(0);
   });
 
   it("estimates nothing until there are enough trades", () => {

@@ -54,10 +54,8 @@ function Ready(props: {
         continue;
       }
       const o = outlook(pool.now, pool.dailyUsd, q);
-      // The queue a new quote joins: contracts resting at the touch, per side, per quoted contract.
-      const queueAhead = pool.now.touchSize / pool.now.contractsQuoted;
       const f = pool.fills;
-      const fills = f.enoughObserved ? yourFillsPerDay(f.runTradeSizes, f.observedMs, size, queueAhead) : null;
+      const fills = f.enoughObserved ? yourFillsPerDay(f.runTrades, f.observedMs, size) : null;
       const fillPnl = fills === null ? null : fillPnlPerDay(f, fills);
       rows.push({
         pool,
@@ -262,8 +260,8 @@ function Ready(props: {
           <li>Estimates assume the book stays as it is and that you meet the program's 50% uptime requirement.</li>
           <li>
             Fill P&amp;L marks each trade {lastHorizon} seconds later. It doesn't capture holding a position to
-            settlement, where a contract jumps to $0 or $1. Fills assume you wait behind everything already resting at your
-            price, using the pool's typical queue rather than the exact one at each trade, and a quote that never moves.
+            settlement, where a contract jumps to $0 or $1. Fills assume you wait behind everything resting at your price
+            when each trade arrived (from a snapshot up to a second old), and a quote that never moves.
           </li>
           <li>
             Trading volume is measured over this run only and scaled to a day, and markouts over the last week. Trades

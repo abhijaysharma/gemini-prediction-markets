@@ -60,7 +60,7 @@ export class RewardsTracker {
   private markouts: MarkoutTracker;
   private fills = new Map<string, FillRecord[]>();
   private poolOfSymbol = new Map<string, string>();
-  private tradesThisRun = new Map<string, { at: number; qty: number }[]>();
+  private tradesThisRun = new Map<string, { at: number; qty: number; queueAhead: number }[]>();
   private watchedSince = new Map<string, number>();
   private store: FillStore | null;
   private sampler: DepthSampler;
@@ -159,8 +159,13 @@ export class RewardsTracker {
     const poolId = this.poolOfSymbol.get(t.symbol);
     if (!poolId) return;
     this.markouts.add({ poolId, symbol: t.symbol, at: t.at, price: t.price, qty: t.qty, takerBuy: t.takerBuy });
+    // The queue a new quote would have waited behind: what rested at the price this trade hit.
+    // A buyer lifts the asks, a seller hits the bids. The snapshot is up to a second old.
+    const book = this.sampler.get(t.symbol);
+    const top = book ? topOfBook(book.bids, book.asks) : null;
+    if (!top) return; // no two-sided book to measure the queue against
     const run = this.tradesThisRun.get(poolId) ?? [];
-    run.push({ at: t.at, qty: t.qty });
+    run.push({ at: t.at, qty: t.qty, queueAhead: t.takerBuy ? top.bestAskSize : top.bestBidSize });
     // Bound memory on a very busy pool; the observed window then starts at the oldest kept trade.
     if (run.length > MAX_RUN_TRADES) run.shift();
     this.tradesThisRun.set(poolId, run);
@@ -190,7 +195,7 @@ export class RewardsTracker {
     const observedMs = since === undefined ? 0 : Date.now() - since;
     return {
       ...stats,
-      runTradeSizes: run.map((t) => t.qty),
+      runTrades: run.map((t) => [t.qty, t.queueAhead]),
       observedMs,
       enoughObserved: observedMs >= (this.opts.minObserveMs ?? 10 * 60_000),
     };

@@ -108,18 +108,21 @@ export function fillStats(records: FillRecord[]): FillStats {
 
 const DAY_MS = 86_400_000;
 
+/** A trade seen this run: its size, and the contracts resting at the price it hit just before. */
+export type QueuedTrade = [qty: number, queueAhead: number];
+
 /**
  * Contracts of a `size` quote that would have been filled per day, given the
  * trades seen. A new quote joins the back of the queue at its price, so a
- * trade of Q contracts first fills the `queueAhead` already resting there,
- * and only what's left reaches you, never more than your size:
- *   your fill = min(size, max(0, Q - queueAhead))
+ * trade of Q contracts first fills the contracts already resting there, and
+ * only what's left reaches you, never more than your size:
+ *   your fill = min(size, max(0, Q - queue ahead))
  * Small trades never reach you, and one huge trade can't fill more than you
- * offered.
+ * offered. The queue is the one each trade actually met, not an average.
  */
-export function yourFillsPerDay(tradeSizes: number[], observedMs: number, size: number, queueAhead: number): number {
+export function yourFillsPerDay(trades: QueuedTrade[], observedMs: number, size: number): number {
   if (observedMs <= 0) return 0;
-  const filled = tradeSizes.reduce((s, q) => s + Math.min(size, Math.max(0, q - queueAhead)), 0);
+  const filled = trades.reduce((s, [q, ahead]) => s + Math.min(size, Math.max(0, q - ahead)), 0);
   return (filled / observedMs) * DAY_MS;
 }
 
