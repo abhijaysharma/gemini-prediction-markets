@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { MockExchange } from "../server/src/mock/exchange";
-import { samplePool, summarize } from "../server/src/rewards/estimate";
+import { medianSample, outlook, samplePool, shareFor } from "../server/src/rewards/estimate";
 import { collectContracts, groupPools } from "../server/src/rewards/pools";
 import { estimateRewards } from "../server/src/rewards/run";
+import { RewardsTracker } from "../server/src/rewards/tracker";
 import { competingScore, quoteScore, spreadWeight, topOfBook, TWO_SIDED_MULTIPLIER } from "../server/src/rewards/scoring";
 import type { Level } from "../server/src/types";
 
@@ -90,41 +91,52 @@ describe("reward pools", () => {
 });
 
 describe("pool estimates", () => {
-  const plan = { size: 100, sizeCap: 250, maxSpreadCents: 10 };
   const book = (bid: string, ask: string, q = "100") => ({ bids: [[bid, q]] as Level[], asks: [[ask, q]] as Level[] });
 
   it("sums score across every contract in the pool", () => {
     // Two contracts, each with 100 resting on both sides at the touch: joining
     // with 100 more takes exactly half of the pool.
     const books: Record<string, ReturnType<typeof book>> = { X: book("0.49", "0.51"), Y: book("0.20", "0.22") };
-    const s = samplePool(["X", "Y"], (sym) => books[sym], plan)!;
-    expect(s.share).toBeCloseTo(0.5, 6);
+    const s = samplePool(["X", "Y"], (sym) => books[sym], 10)!;
+    expect(shareFor(s, { size: 100, sizeCap: 250 })).toBeCloseTo(0.5, 6);
     expect(s.contractsQuoted).toBe(2);
-    expect(s.capital).toBeCloseTo(100 * 0.49 + 100 * 0.49 + 100 * 0.2 + 100 * 0.78, 6);
+    expect(s.capitalPerContract).toBeCloseTo(0.49 + 0.49 + 0.2 + 0.78, 6);
+  });
+
+  it("answers any quote size from one measurement", () => {
+    const s = samplePool(["X"], () => book("0.49", "0.51"), 10)!;
+    expect(shareFor(s, { size: 100, sizeCap: 250 })).toBeCloseTo(1 / 2, 6);
+    expect(shareFor(s, { size: 200, sizeCap: 250 })).toBeCloseTo(2 / 3, 6);
+    // Past the per-maker cap, more size earns nothing more.
+    expect(shareFor(s, { size: 1000, sizeCap: 250 })).toBeCloseTo(shareFor(s, { size: 250, sizeCap: 250 }), 9);
   });
 
   it("leaves out contracts with no book or a one-sided book", () => {
     const books: Record<string, { bids: Level[]; asks: Level[] }> = { X: book("0.49", "0.51"), Y: { bids: [["0.4", "5"]], asks: [] } };
-    const s = samplePool(["X", "Y", "Z"], (sym) => books[sym], plan)!;
+    const s = samplePool(["X", "Y", "Z"], (sym) => books[sym], 10)!;
     expect([s.contractsQuoted, s.oneSided, s.noBook]).toEqual([1, 1, 1]);
   });
 
   it("returns null when nothing in the pool can be quoted", () => {
-    expect(samplePool(["Z"], () => undefined, plan)).toBeNull();
+    expect(samplePool(["Z"], () => undefined, 10)).toBeNull();
   });
 
-  it("turns samples into dollars per day per $1,000 of capital", () => {
-    const pool = { id: "p", name: "P", dailyUsd: 100, category: null, source: "x", events: [{ ticker: "E", title: "e", qualifyingMakers: 4, endsAt: "" }] };
-    const samples = [0.2, 0.3, 0.4].map((share) => ({ share, capital: 500, contractsQuoted: 1, oneSided: 0, noBook: 0 }));
-    const e = summarize(pool, ["X"], samples, 1)!;
-    expect(e.share).toBe(0.3);
-    expect(e.estUsdPerDay).toBeCloseTo(30, 6);
-    expect(e.usdPerDayPer1k).toBeCloseTo(60, 6);
-    expect(e.maxMakers).toBe(4);
+  it("turns a sample into dollars per day per $1,000 of capital", () => {
+    // quoteWeight 1, competing 100: a 100-lot takes half.
+    const o = outlook({ quoteWeight: 1, competing: 100, capitalPerContract: 2 }, 60, { size: 100, sizeCap: 250 });
+    expect(o.share).toBeCloseTo(0.5, 9);
+    expect(o.estUsdPerDay).toBeCloseTo(30, 9);
+    expect(o.capital).toBeCloseTo(200, 9);
+    expect(o.usdPerDayPer1k).toBeCloseTo(150, 9);
+  });
+
+  it("takes medians field by field", () => {
+    const mk = (quoteWeight: number, competing: number) => ({ quoteWeight, competing, capitalPerContract: 1, contractsQuoted: 1, oneSided: 0, noBook: 0 });
+    expect(medianSample([mk(1, 50), mk(3, 10), mk(2, 1000)])).toMatchObject({ quoteWeight: 2, competing: 50 });
   });
 });
 
-describe("estimateRewards end to end", () => {
+describe("rewards against the mock exchange", () => {
   let mock: MockExchange;
   let port: number;
   beforeEach(async () => {
@@ -135,25 +147,62 @@ describe("estimateRewards end to end", () => {
     await mock.close();
   });
 
-  it("ranks live pools from the mock's reward endpoints and depth20", async () => {
+  it("ranks live pools from the reward endpoints and depth20", async () => {
     const result = await estimateRewards({
       restUrl: `http://127.0.0.1:${port}`,
       wsUrl: `ws://127.0.0.1:${port}`,
       size: 100,
       seconds: 1,
-      sampleEveryMs: 200,
+      sampleEveryMs: 100,
+      stream: "depth20@100ms",
     });
     expect(result.maxSpreadCents).toBe(10);
-    expect(result.subscribeFailures).toEqual([]);
-    const ids = result.estimates.map((e) => e.pool.id).sort();
-    expect(ids).toEqual(["event:ETH15M2610011015", "pool:7"]);
-    const btc = result.estimates.find((e) => e.pool.id === "pool:7")!;
-    // The upcoming window in the pool has no book yet, so only one of its two events is live.
-    expect(btc.liveEvents).toBe(1);
+    expect(result.failedSubscriptions).toBe(0);
+    expect(result.ranked.map((r) => r.pool.id).sort()).toEqual(["event:ETH15M2610011015", "pool:7"]);
+    const btc = result.ranked.find((r) => r.pool.id === "pool:7")!;
+    // The upcoming window in the pool has no contracts open yet, so one of its two events is live.
+    expect([btc.pool.liveEvents, btc.pool.totalEvents]).toEqual([1, 2]);
     expect(btc.share).toBeGreaterThan(0);
     expect(btc.share).toBeLessThan(1);
     expect(btc.usdPerDayPer1k).toBeGreaterThan(0);
   }, 15_000);
+
+  it("records a trend point each interval and looks up events it hasn't seen", async () => {
+    const tracker = new RewardsTracker({
+      restUrl: `http://127.0.0.1:${port}`,
+      wsUrl: `ws://127.0.0.1:${port}`,
+      stream: "depth20@100ms",
+      sampleEveryMs: 50,
+      windowSize: 5,
+      minuteMs: 300,
+    });
+    try {
+      expect(tracker.state().status).toBe("idle");
+      tracker.ensureStarted();
+      await waitFor(() => tracker.state().pools.some((p) => (p.history.length ?? 0) >= 2), 8000);
+      const state = tracker.state();
+      expect(state.status).toBe("ready");
+      expect(state.contractsWatched).toBe(3);
+      const btc = state.pools.find((p) => p.id === "pool:7")!;
+      expect(btc.now).not.toBeNull();
+      expect(btc.history[0].quoteWeight).toBeGreaterThan(0);
+      // The upcoming window wasn't in the start-up listing, so the refresh asked for it by name.
+      expect(mock.requests).toContain("/v1/prediction-markets/events/BTC05M2610011005");
+    } finally {
+      tracker.stop();
+    }
+  }, 15_000);
+
+  it("works with the defaults the dashboard uses (the once-a-second depth20 stream)", async () => {
+    const tracker = new RewardsTracker({ restUrl: `http://127.0.0.1:${port}`, wsUrl: `ws://127.0.0.1:${port}` });
+    try {
+      await tracker.start();
+      await waitFor(() => tracker.state().pools.every((p) => p.now !== null), 6000);
+      expect(tracker.state().failedSubscriptions).toBe(0);
+    } finally {
+      tracker.stop();
+    }
+  }, 10_000);
 
   it("refuses a size below the program minimum", async () => {
     await expect(
@@ -161,3 +210,11 @@ describe("estimateRewards end to end", () => {
     ).rejects.toThrow("at least 10");
   });
 });
+
+async function waitFor(cond: () => boolean, timeoutMs: number) {
+  const start = Date.now();
+  while (!cond()) {
+    if (Date.now() - start > timeoutMs) throw new Error("timed out waiting for condition");
+    await new Promise((r) => setTimeout(r, 25));
+  }
+}

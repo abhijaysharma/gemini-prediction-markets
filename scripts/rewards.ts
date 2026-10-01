@@ -28,14 +28,14 @@ console.log(`\nQuoting ${size} contracts at the best bid and ask of every two-si
 console.log(
   ["Pool".padEnd(44), "Pool/day".padStart(9), "Makers".padStart(6), "Quoted".padStart(9), "Share".padStart(7), "Est/day".padStart(8), "Capital".padStart(8), "Per $1k".padStart(8)].join("  "),
 );
-for (const e of result.estimates) {
+for (const e of result.ranked) {
   const name = e.pool.name.slice(0, 44);
   console.log(
     [
       name.padEnd(44),
       money(e.pool.dailyUsd).padStart(9),
-      String(e.maxMakers).padStart(6),
-      `${e.contractsQuoted}/${e.contractsTotal}`.padStart(9),
+      String(e.pool.maxMakers).padStart(6),
+      `${e.pool.now!.contractsQuoted}/${e.pool.contractsTotal}`.padStart(9),
       `${(e.share * 100).toFixed(1)}%`.padStart(7),
       money(e.estUsdPerDay).padStart(8),
       money(e.capital).padStart(8),
@@ -44,7 +44,7 @@ for (const e of result.estimates) {
   );
 }
 console.log(`
-${result.idlePools} pools had no event trading right now and are not shown.${result.subscribeFailures.length ? ` ${result.subscribeFailures.length} subscriptions failed.` : ""}
+${result.idlePools} pools had no event trading right now and are not shown.${result.failedSubscriptions ? ` ${result.failedSubscriptions} subscriptions failed.` : ""}
 
 Read these as estimates, not promises:
 - The spread weight is fitted (1/d^2) to the docs' worked example, not published.

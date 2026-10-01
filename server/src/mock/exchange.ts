@@ -21,6 +21,8 @@ interface Market {
   tradeId: number;
   /** Event time (ns) of the last book change; the snapshot carries this as E. */
   lastChangeNs: number;
+  /** When the once-a-second depth20 stream last went out. */
+  lastSlowRefMs: number;
 }
 
 interface Client {
@@ -49,6 +51,8 @@ export class MockExchange {
   private timer: NodeJS.Timeout | null = null;
   private paused = false;
   private quiet = false;
+  /** Every HTTP path requested, for tests. */
+  readonly requests: string[] = [];
   private rand: () => number;
   private readonly tickMs: number;
   port = 0;
@@ -126,7 +130,9 @@ export class MockExchange {
       res.writeHead(404).end();
       return;
     }
-    if (req.url?.startsWith("/v1/prediction-markets/events")) {
+    const path = new URL(req.url ?? "/", "http://mock").pathname;
+    this.requests.push(path);
+    if (path.startsWith("/v1/prediction-markets/events")) {
       const byTicker = new Map<string, { title: string; contracts: object[] }>();
       for (const m of this.markets.values()) {
         const ticker = eventTicker(m.symbol);
@@ -135,6 +141,17 @@ export class MockExchange {
         byTicker.set(ticker, event);
       }
       const data = [...byTicker].map(([ticker, e]) => ({ ticker, ...e }));
+      const one = /^\/v1\/prediction-markets\/events\/([^/]+)$/.exec(path);
+      if (one) {
+        // Get Event: a flat event object, or 404.
+        const event = data.find((e) => e.ticker === decodeURIComponent(one[1]));
+        if (!event) {
+          res.writeHead(404).end();
+          return;
+        }
+        json(event);
+        return;
+      }
       json({ data, pagination: { limit: 100, offset: 0, total: data.length } });
       return;
     }
@@ -212,7 +229,7 @@ export class MockExchange {
   private isValidStream(stream: string): boolean {
     if (stream === "contractStatus") return true;
     const [sym, kind] = splitStream(stream);
-    return !!this.market(sym) && ["depth@100ms", "depth20@100ms", "trade"].includes(kind);
+    return !!this.market(sym) && ["depth@100ms", "depth20@100ms", "depth20", "trade"].includes(kind);
   }
 
   // ------------------------------------------------------------ simulation
@@ -239,14 +256,20 @@ export class MockExchange {
           a: [...changes.asks].map(([p, q]) => [cents(p), String(q)]),
         });
       }
-      // Sent every tick, changed or not: Gemini publishes depth20@100ms on a timer.
-      this.broadcast(`${key}@depth20@100ms`, {
+      // Sent every tick, changed or not: Gemini publishes depth20 on a timer,
+      // every 100 ms on @depth20@100ms and once a second on plain @depth20.
+      const ref = {
         lastUpdateId: m.lastId,
         // Not in the docs' example, but present on the live feed.
         symbol: key,
         bids: sortLevels(m.bids, "desc").slice(0, 20),
         asks: sortLevels(m.asks, "asc").slice(0, 20),
-      });
+      };
+      this.broadcast(`${key}@depth20@100ms`, ref);
+      if (Date.now() - m.lastSlowRefMs >= 1000) {
+        m.lastSlowRefMs = Date.now();
+        this.broadcast(`${key}@depth20`, ref);
+      }
 
       if (changed && this.rand() < 0.35) {
         const E = m.lastChangeNs;
@@ -317,6 +340,7 @@ export class MockExchange {
       lastId: 1_000_000 + Math.floor(this.rand() * 1_000_000),
       tradeId: 1_000_000,
       lastChangeNs: nowNs(),
+      lastSlowRefMs: 0,
     };
     for (let i = 1; i <= 14; i++) {
       if (mid - i >= 1 && this.rand() < 0.85) m.bids.set(mid - i, this.qty());
