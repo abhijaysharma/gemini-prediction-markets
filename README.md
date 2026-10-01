@@ -4,6 +4,8 @@
 
 A local order book for Gemini prediction markets that proves it's correct, notices when it isn't, and rebuilds itself.
 
+**[Live demo →](https://gemini-prediction-markets.onrender.com)** Real Gemini data, with the order book and the Rewards tab. It's on free hosting, so after a quiet spell it can take about a minute to wake up.
+
 It streams Gemini's public market data over WebSocket, maintains an L2 order book from a snapshot plus sequenced deltas, and continuously checks that book against the exchange's own published top-of-book. A fault-injection panel lets you break it three different ways and watch each failure get caught by a different mechanism.
 
 ![Dashboard on a live Gemini contract after three injected faults](docs/dashboard-live.png)
