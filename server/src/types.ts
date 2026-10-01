@@ -115,8 +115,24 @@ export interface RewardsPoolView {
   maxMakers: number;
   contractsTotal: number;
   /** Medians over the last minute; null when nothing in the pool can be quoted right now. */
-  now: (RewardsPoint & { contractsQuoted: number; oneSided: number; noBook: number }) | null;
+  now: (RewardsPoint & { touchSize: number; contractsQuoted: number; oneSided: number; noBook: number }) | null;
   history: RewardsPoint[];
+  fills: PoolFills;
+}
+
+/** What happened to makers after trades in this pool. See server/src/rewards/markout.ts. */
+export interface PoolFills {
+  /** Trades marked out so far, including ones saved from earlier runs. */
+  trades: number;
+  contracts: number;
+  /** Size-weighted maker P&L per contract, in cents, at each of RewardsState.horizonsS. */
+  markoutCents: (number | null)[];
+  se60: number | null;
+  /** Every trade seen in this run as [size, contracts queued at the price it hit], for yourFillsPerDay. */
+  runTrades: [number, number][];
+  /** How long this run has watched the pool; volume isn't extrapolated until it's long enough. */
+  observedMs: number;
+  enoughObserved: boolean;
 }
 
 export interface RewardsState {
@@ -129,5 +145,8 @@ export interface RewardsState {
   minSize: number;
   contractsWatched: number;
   failedSubscriptions: number;
+  /** Fill-risk settings, so the dashboard explains the same thresholds the server uses. */
+  horizonsS: readonly number[];
+  minTrades: number;
   pools: RewardsPoolView[];
 }

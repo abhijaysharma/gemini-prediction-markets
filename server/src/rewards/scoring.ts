@@ -23,6 +23,9 @@ export interface TopOfBook {
   bestBid: number;
   bestAsk: number;
   mid: number;
+  /** Contracts resting at the best bid and best ask: the queue a new quote would join. */
+  bestBidSize: number;
+  bestAskSize: number;
 }
 
 /** Null for a one-sided or empty book: the docs score those differently, and we skip them. */
@@ -30,7 +33,15 @@ export function topOfBook(bids: Level[], asks: Level[]): TopOfBook | null {
   if (bids.length === 0 || asks.length === 0) return null;
   const bestBid = Math.max(...bids.map(([p]) => Number(p)));
   const bestAsk = Math.min(...asks.map(([p]) => Number(p)));
-  return { bestBid, bestAsk, mid: (bestBid + bestAsk) / 2 };
+  const sizeAt = (levels: Level[], price: number) =>
+    levels.filter(([p]) => Number(p) === price).reduce((s, [, q]) => s + Number(q), 0);
+  return {
+    bestBid,
+    bestAsk,
+    mid: (bestBid + bestAsk) / 2,
+    bestBidSize: sizeAt(bids, bestBid),
+    bestAskSize: sizeAt(asks, bestAsk),
+  };
 }
 
 /**

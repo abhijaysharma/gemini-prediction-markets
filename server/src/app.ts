@@ -9,6 +9,8 @@ export interface AppOptions {
   /** Fixed symbol. When set, the app never rolls over on its own. */
   symbol?: string;
   mode: "live" | "mock";
+  /** Where the rewards tracker saves fills; omit to keep them in memory. */
+  fillsFile?: string;
   pingMs?: number;
   staleMs?: number;
   quiet?: boolean;
@@ -47,6 +49,7 @@ export class App {
     this.rewards = new RewardsTracker({
       restUrl: opts.restUrl,
       wsUrl: opts.wsUrl,
+      fillsFile: opts.fillsFile,
       log: opts.quiet ? undefined : (m) => console.log(`[rewards] ${m}`),
     });
     this.autoRollover = !opts.symbol;

@@ -1,4 +1,8 @@
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { FillStore } from "../server/src/rewards/fillstore";
 import { MockExchange } from "../server/src/mock/exchange";
 import { medianSample, outlook, samplePool, shareFor } from "../server/src/rewards/estimate";
 import { collectContracts, groupPools } from "../server/src/rewards/pools";
@@ -131,7 +135,7 @@ describe("pool estimates", () => {
   });
 
   it("takes medians field by field", () => {
-    const mk = (quoteWeight: number, competing: number) => ({ quoteWeight, competing, capitalPerContract: 1, contractsQuoted: 1, oneSided: 0, noBook: 0 });
+    const mk = (quoteWeight: number, competing: number) => ({ quoteWeight, competing, capitalPerContract: 1, touchSize: 1, contractsQuoted: 1, oneSided: 0, noBook: 0 });
     expect(medianSample([mk(1, 50), mk(3, 10), mk(2, 1000)])).toMatchObject({ quoteWeight: 2, competing: 50 });
   });
 });
@@ -204,6 +208,44 @@ describe("rewards against the mock exchange", () => {
     }
   }, 10_000);
 
+  it("marks out real fills, saves them, and loads them again after a restart", async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "fills-"));
+    const fillsFile = path.join(dir, "fills.ndjson");
+    const opts = {
+      restUrl: `http://127.0.0.1:${port}`,
+      wsUrl: `ws://127.0.0.1:${port}`,
+      stream: "depth20@100ms" as const,
+      sampleEveryMs: 50,
+      horizonsS: [0.1, 0.2, 0.3], // seconds, so the test needn't wait a minute
+      minObserveMs: 0,
+      fillsFile,
+    };
+    const first = new RewardsTracker(opts);
+    try {
+      await first.start();
+      await waitFor(() => first.state().pools.some((p) => p.fills.trades >= 3), 10_000);
+      const btc = first.state().pools.find((p) => p.fills.trades >= 3)!.fills;
+      expect(btc.markoutCents.every((m) => m !== null)).toBe(true);
+      expect(btc.runTrades.length).toBeGreaterThanOrEqual(1);
+      expect(btc.runTrades.every(([qty, ahead]) => qty > 0 && ahead >= 0)).toBe(true);
+      expect(btc.enoughObserved).toBe(true);
+    } finally {
+      first.stop();
+    }
+    const saved = readFileSync(fillsFile, "utf8").trim().split("\n").length;
+    expect(saved).toBeGreaterThanOrEqual(3);
+
+    const second = new RewardsTracker(opts);
+    try {
+      await second.start();
+      // Before the new run has seen a single trade, the saved ones are already counted.
+      expect(second.state().pools.reduce((n, p) => n + p.fills.trades, 0)).toBeGreaterThanOrEqual(saved);
+    } finally {
+      second.stop();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }, 20_000);
+
   it("refuses a size below the program minimum", async () => {
     await expect(
       estimateRewards({ restUrl: `http://127.0.0.1:${port}`, wsUrl: `ws://127.0.0.1:${port}`, size: 5, seconds: 1 }),
@@ -218,3 +260,19 @@ async function waitFor(cond: () => boolean, timeoutMs: number) {
     await new Promise((r) => setTimeout(r, 25));
   }
 }
+
+describe("fill store", () => {
+  it("keeps a week of fills, and drops older and half-written lines", () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "fills-"));
+    const file = path.join(dir, "fills.ndjson");
+    const now = Date.UTC(2026, 9, 10);
+    const rec = (daysAgo: number) =>
+      JSON.stringify({ poolId: "p", symbol: "X", at: now - daysAgo * 86_400_000, price: 0.5, qty: 1, takerBuy: true, markoutCents: [0, 0, 0] });
+    writeFileSync(file, [rec(1), rec(8), '{"poolId":"p","sym'].join("\n") + "\n");
+    const store = new FillStore(file);
+    expect(store.load(now).map((r) => r.at)).toEqual([now - 86_400_000]);
+    // The file was rewritten without the stale and broken lines.
+    expect(readFileSync(file, "utf8").trim().split("\n")).toHaveLength(1);
+    rmSync(dir, { recursive: true, force: true });
+  });
+});

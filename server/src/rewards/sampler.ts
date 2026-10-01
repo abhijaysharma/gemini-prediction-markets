@@ -1,7 +1,8 @@
 import WebSocket from "ws";
 import type { Level } from "../types";
 
-// Latest depth20 snapshot for many symbols at once.
+// Latest depth20 snapshot for many symbols at once, and optionally every
+// trade on them.
 //
 // No sequencing or rebuilding is needed here: depth20 is the exchange's own
 // top-20 snapshot. Each frame carries a `symbol` field (not in the docs'
@@ -14,6 +15,16 @@ export interface DepthSnapshot {
   receivedAt: number;
 }
 
+export interface SampledTrade {
+  symbol: string;
+  price: number;
+  qty: number;
+  /** The taker bought, so a resting sell order was filled. */
+  takerBuy: boolean;
+  /** Local receive time, the same clock the depth snapshots are timed on. */
+  at: number;
+}
+
 export interface SamplerOptions {
   url: string;
   /**
@@ -21,6 +32,8 @@ export interface SamplerOptions {
    * Rewards are scored once a minute, so once a second is plenty.
    */
   stream?: "depth20" | "depth20@100ms";
+  /** Also subscribe to each symbol's @trade stream and report every trade. */
+  onTrade?: (trade: SampledTrade) => void;
   /** Symbols per connection. 300 streams were verified on one connection; stay well under. */
   perConnection?: number;
   /** Delay between requests; 20 a second was verified safe. */
@@ -80,7 +93,8 @@ export class DepthSampler {
   }
 
   private connWithRoom(): Conn {
-    const per = this.opts.perConnection ?? 150;
+    // Two streams per symbol when trades are on: keep each connection at 200 streams or fewer.
+    const per = this.opts.perConnection ?? (this.opts.onTrade ? 100 : 150);
     const open = this.conns.find((c) => c.symbols.size < per);
     if (open) return open;
     const c: Conn = { ws: null, symbols: new Set(), queue: [], attempt: 0 };
@@ -89,14 +103,18 @@ export class DepthSampler {
     return c;
   }
 
-  private stream(symbol: string): string {
-    return `${symbol}@${this.opts.stream ?? "depth20"}`;
+  private streams(symbol: string): string[] {
+    const depth = `${symbol}@${this.opts.stream ?? "depth20"}`;
+    return this.opts.onTrade ? [depth, `${symbol}@trade`] : [depth];
   }
 
   private enqueue(c: Conn, method: string, symbol: string): void {
-    const id = `${method === "SUBSCRIBE" ? "s" : "u"}:${symbol}:${++this.reqId}`;
-    c.queue.push({ id, method, params: [this.stream(symbol)] });
-    if (c.queue.length === 1 && c.ws?.readyState === WebSocket.OPEN) this.drain(c);
+    const wasEmpty = c.queue.length === 0;
+    for (const stream of this.streams(symbol)) {
+      const id = `${method === "SUBSCRIBE" ? "s" : "u"}:${symbol}:${++this.reqId}`;
+      c.queue.push({ id, method, params: [stream] });
+    }
+    if (wasEmpty && c.ws?.readyState === WebSocket.OPEN) this.drain(c);
   }
 
   /** Send queued requests one at a time, paced, so a burst of new symbols can't trip a rate limit. */
@@ -113,7 +131,9 @@ export class DepthSampler {
     ws.on("open", () => {
       c.attempt = 0;
       // A fresh connection holds nothing: resubscribe everything this one owns.
-      c.queue = [...c.symbols].map((s) => ({ id: `s:${s}:${++this.reqId}`, method: "SUBSCRIBE", params: [this.stream(s)] }));
+      c.queue = [...c.symbols].flatMap((s) =>
+        this.streams(s).map((stream) => ({ id: `s:${s}:${++this.reqId}`, method: "SUBSCRIBE", params: [stream] })),
+      );
       this.drain(c);
     });
     ws.on("message", (data) => {
@@ -135,6 +155,13 @@ export class DepthSampler {
         const symbol = msg.symbol.toUpperCase();
         // Ignore a frame that was already in flight when we unsubscribed.
         if (c.symbols.has(symbol)) this.latest.set(symbol, { bids: msg.bids, asks: msg.asks, receivedAt: Date.now() });
+        return;
+      }
+      // Trade frames carry no `e`: {E, s, t, p, q, m}, where m means the buyer was the maker.
+      if (this.opts.onTrade && typeof msg.s === "string" && msg.t !== undefined && msg.p !== undefined) {
+        const symbol = msg.s.toUpperCase();
+        if (!c.symbols.has(symbol)) return;
+        this.opts.onTrade({ symbol, price: Number(msg.p), qty: Number(msg.q), takerBuy: !msg.m, at: Date.now() });
       }
     });
     ws.on("error", () => {});

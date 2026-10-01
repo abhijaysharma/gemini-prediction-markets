@@ -13,6 +13,8 @@ import { MockExchange } from "./mock/exchange";
 //   SYMBOL          stream one fixed symbol instead of auto-discovering
 //   GEMINI_WS_URL   default wss://ws.gemini.com
 //   GEMINI_REST_URL default https://api.gemini.com
+//   FILLS_FILE      where the rewards tab saves fills (default data/fills.ndjson,
+//                   or data/fills-mock.ndjson with --mock so synthetic fills never mix with real ones)
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const staticDir = path.resolve(here, "../../web/dist");
@@ -37,6 +39,7 @@ async function main() {
     restUrl,
     symbol: process.env.SYMBOL || undefined,
     mode: useMock ? "mock" : "live",
+    fillsFile: process.env.FILLS_FILE ?? path.resolve(here, `../../data/${useMock ? "fills-mock" : "fills"}.ndjson`),
   });
   const server = createServer(app, { staticDir });
   server.listen(port, () => {

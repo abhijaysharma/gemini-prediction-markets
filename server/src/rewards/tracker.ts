@@ -1,5 +1,7 @@
-import type { RewardsPoint, RewardsPoolView, RewardsState } from "../types";
+import type { PoolFills, RewardsPoint, RewardsPoolView, RewardsState } from "../types";
 import { medianSample, samplePool, type PoolSample } from "./estimate";
+import { FillStore } from "./fillstore";
+import { fillStats, HORIZONS_S, MarkoutTracker, MIN_TRADES, type FillRecord } from "./markout";
 import {
   fetchContractsByEvent,
   fetchEventContracts,
@@ -9,7 +11,8 @@ import {
   SIZE_CAP,
   type Pool,
 } from "./pools";
-import { DepthSampler, type SamplerOptions } from "./sampler";
+import { DepthSampler, type SampledTrade, type SamplerOptions } from "./sampler";
+import { topOfBook } from "./scoring";
 
 export interface TrackerOptions {
   restUrl: string;
@@ -24,10 +27,17 @@ export interface TrackerOptions {
   historySize?: number;
   /** Lookups of newly listed events per refresh, paced at one per second. */
   lookupsPerRefresh?: number;
+  /** Where completed fills are saved so markouts survive a restart; omit to keep them in memory only. */
+  fillsFile?: string;
+  /** Watch a pool this long before extrapolating its trading volume to a day. */
+  minObserveMs?: number;
+  horizonsS?: readonly number[];
   log?: (msg: string) => void;
 }
 
 const RETRY_LOOKUP_MS = 5 * 60_000;
+const KEEP_FILLS_MS = 7 * 24 * 60 * 60 * 1000;
+const MAX_RUN_TRADES = 5_000;
 
 /**
  * Measures every liquidity reward pool continuously and keeps a short trend
@@ -46,13 +56,22 @@ export class RewardsTracker {
   private notYetOpen = new Map<string, number>();
   private windows = new Map<string, PoolSample[]>();
   private history = new Map<string, RewardsPoint[]>();
+  /** Fill risk: trades waiting for their markouts, finished fills per pool, and this run's volume. */
+  private markouts: MarkoutTracker;
+  private fills = new Map<string, FillRecord[]>();
+  private poolOfSymbol = new Map<string, string>();
+  private tradesThisRun = new Map<string, { at: number; qty: number; queueAhead: number }[]>();
+  private watchedSince = new Map<string, number>();
+  private store: FillStore | null;
   private sampler: DepthSampler;
   private timers: NodeJS.Timeout[] = [];
   private refreshing = false;
   private readonly log: (msg: string) => void;
 
   constructor(private opts: TrackerOptions) {
-    this.sampler = new DepthSampler({ url: opts.wsUrl, stream: opts.stream });
+    this.sampler = new DepthSampler({ url: opts.wsUrl, stream: opts.stream, onTrade: (t) => this.onTrade(t) });
+    this.store = opts.fillsFile ? new FillStore(opts.fillsFile) : null;
+    this.markouts = new MarkoutTracker(opts.horizonsS ?? HORIZONS_S);
     this.log = opts.log ?? (() => {});
   }
 
@@ -70,6 +89,7 @@ export class RewardsTracker {
       const config = await fetchRewardsConfig(this.opts.restUrl);
       if (!config.enabled) throw new Error("the liquidity rewards program is not enabled");
       this.maxSpreadCents = config.maxSpreadCents;
+      for (const r of this.store?.load() ?? []) this.fills.set(r.poolId, [...(this.fills.get(r.poolId) ?? []), r]);
       this.pools = await fetchPools(this.opts.restUrl);
       // One pass over every listing page up front; newly listed events are looked up one by one later.
       this.contracts = await fetchContractsByEvent(this.opts.restUrl);
@@ -112,6 +132,8 @@ export class RewardsTracker {
       maxSpreadCents: this.maxSpreadCents,
       sizeCap: SIZE_CAP,
       minSize: MIN_SIZE,
+      horizonsS: this.opts.horizonsS ?? HORIZONS_S,
+      minTrades: MIN_TRADES,
       contractsWatched: this.sampler.symbolCount,
       failedSubscriptions: this.sampler.failed.size,
       pools: this.pools.map((p) => this.view(p)),
@@ -123,7 +145,60 @@ export class RewardsTracker {
   }
 
   private syncSymbols(): void {
-    this.sampler.setSymbols(new Set(this.pools.flatMap((p) => this.symbolsOf(p))));
+    this.poolOfSymbol.clear();
+    const now = Date.now();
+    for (const pool of this.pools) {
+      const symbols = this.symbolsOf(pool);
+      for (const s of symbols) this.poolOfSymbol.set(s.toUpperCase(), pool.id);
+      if (symbols.length && !this.watchedSince.has(pool.id)) this.watchedSince.set(pool.id, now);
+    }
+    this.sampler.setSymbols(this.poolOfSymbol.keys());
+  }
+
+  private onTrade(t: SampledTrade): void {
+    const poolId = this.poolOfSymbol.get(t.symbol);
+    if (!poolId) return;
+    this.markouts.add({ poolId, symbol: t.symbol, at: t.at, price: t.price, qty: t.qty, takerBuy: t.takerBuy });
+    // The queue a new quote would have waited behind: what rested at the price this trade hit.
+    // A buyer lifts the asks, a seller hits the bids. The snapshot is up to a second old.
+    const book = this.sampler.get(t.symbol);
+    const top = book ? topOfBook(book.bids, book.asks) : null;
+    if (!top) return; // no two-sided book to measure the queue against
+    const run = this.tradesThisRun.get(poolId) ?? [];
+    run.push({ at: t.at, qty: t.qty, queueAhead: t.takerBuy ? top.bestAskSize : top.bestBidSize });
+    // Bound memory on a very busy pool; the observed window then starts at the oldest kept trade.
+    if (run.length > MAX_RUN_TRADES) run.shift();
+    this.tradesThisRun.set(poolId, run);
+  }
+
+  /** Mark pending fills against the current mids, and keep the ones that are done. */
+  private markFills(now: number): void {
+    const done = this.markouts.resolve(now, (symbol) => {
+      const book = this.sampler.get(symbol);
+      return book ? topOfBook(book.bids, book.asks)?.mid : undefined;
+    });
+    if (done.length === 0) return;
+    for (const r of done) {
+      const list = this.fills.get(r.poolId) ?? [];
+      list.push(r);
+      while (list.length && now - list[0].at > KEEP_FILLS_MS) list.shift();
+      this.fills.set(r.poolId, list);
+    }
+    this.store?.append(done);
+  }
+
+  private fillsView(poolId: string): PoolFills {
+    const stats = fillStats(this.fills.get(poolId) ?? []);
+    const run = this.tradesThisRun.get(poolId) ?? [];
+    let since = this.watchedSince.get(poolId);
+    if (since !== undefined && run.length === MAX_RUN_TRADES) since = Math.max(since, run[0].at);
+    const observedMs = since === undefined ? 0 : Date.now() - since;
+    return {
+      ...stats,
+      runTrades: run.map((t) => [t.qty, t.queueAhead]),
+      observedMs,
+      enoughObserved: observedMs >= (this.opts.minObserveMs ?? 10 * 60_000),
+    };
   }
 
   private sample(): void {
@@ -138,6 +213,7 @@ export class RewardsTracker {
       this.windows.set(pool.id, w);
     }
     this.updatedAt = Date.now();
+    this.markFills(this.updatedAt);
   }
 
   private now(poolId: string): RewardsPoolView["now"] {
@@ -200,6 +276,7 @@ export class RewardsTracker {
       contractsTotal: this.symbolsOf(pool).length,
       now: this.now(pool.id),
       history: this.history.get(pool.id) ?? [],
+      fills: this.fillsView(pool.id),
     };
   }
 }
@@ -209,6 +286,7 @@ const EMPTY: PoolSample = Object.freeze({
   quoteWeight: 0,
   competing: 0,
   capitalPerContract: 0,
+  touchSize: 0,
   contractsQuoted: 0,
   oneSided: 0,
   noBook: 0,
