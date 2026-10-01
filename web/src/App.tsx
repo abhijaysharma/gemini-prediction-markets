@@ -11,6 +11,8 @@ import { TopBar } from "./components/TopBar";
 import { TradeTape } from "./components/TradeTape";
 import { useMarkets, useStream, useView } from "./useStream";
 
+const isLocal = ["localhost", "127.0.0.1", "[::1]"].includes(location.hostname);
+
 export function App() {
   const { state, connected } = useStream();
   const markets = useMarkets();
@@ -21,10 +23,14 @@ export function App() {
       <div className="boot">
         <div className="glass boot-card">
           <LoaderCircle size={28} strokeWidth={1.5} className="spin" aria-hidden="true" />
-          <p>{connected ? "Waiting for the first update from the server" : "Connecting to the local server on port 8787"}</p>
-          <p className="muted">
-            Start it with <code>npm run dev</code>, or <code>npm run dev:mock</code> to use synthetic data.
-          </p>
+          <p>{connected ? "Waiting for the first update from the server" : "Connecting to the server"}</p>
+          {isLocal ? (
+            <p className="muted">
+              Start it with <code>npm run dev</code>, or <code>npm run dev:mock</code> to use synthetic data.
+            </p>
+          ) : (
+            <p className="muted">If the demo has been idle, the server can take about a minute to wake up.</p>
+          )}
         </div>
       </div>
     );

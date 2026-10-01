@@ -1,0 +1,21 @@
+# Render Blueprint: https://render.com/docs/blueprint-spec
+# One web service serves the dashboard, the API and the live stream.
+services:
+  - type: web
+    name: gemini-prediction-markets
+    runtime: node
+    # Free instances sleep after 15 minutes without visitors and take about a
+    # minute to wake. Switch to a paid instance in the dashboard to stay on.
+    plan: free
+    # Closest region to Gemini's servers in New York.
+    region: virginia
+    # The server runs TypeScript through tsx, a dev dependency, so install those too.
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/state
+    # Only deploy commits that pass CI.
+    autoDeployTrigger: checksPass
+    envVars:
+      # Shared deployment: no market switching, one fault every 10 seconds.
+      - key: PUBLIC_DEMO
+        value: "1"
