@@ -96,3 +96,38 @@ export interface StatePayload {
   log: LogEntry[];
   serverTime: number;
 }
+
+/** One point of a pool's trend: medians over one minute, valid for any quote size. */
+export interface RewardsPoint {
+  t: number;
+  quoteWeight: number;
+  competing: number;
+  capitalPerContract: number;
+}
+
+export interface RewardsPoolView {
+  id: string;
+  name: string;
+  dailyUsd: number;
+  source: string;
+  liveEvents: number;
+  totalEvents: number;
+  maxMakers: number;
+  contractsTotal: number;
+  /** Medians over the last minute; null when nothing in the pool can be quoted right now. */
+  now: (RewardsPoint & { contractsQuoted: number; oneSided: number; noBook: number }) | null;
+  history: RewardsPoint[];
+}
+
+export interface RewardsState {
+  status: "idle" | "starting" | "ready" | "error";
+  message: string | null;
+  startedAt: number | null;
+  updatedAt: number | null;
+  maxSpreadCents: number;
+  sizeCap: number;
+  minSize: number;
+  contractsWatched: number;
+  failedSubscriptions: number;
+  pools: RewardsPoolView[];
+}

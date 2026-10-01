@@ -1,93 +1,102 @@
 import type { Level } from "../types";
-import type { Pool } from "./pools";
 import { competingScore, quoteCapital, quoteScore, topOfBook } from "./scoring";
 
-export interface QuotePlan {
-  /** Contracts quoted on each side of every contract in the pool. */
-  size: number;
-  sizeCap: number;
-  maxSpreadCents: number;
-}
-
-/** One pool at one instant. */
+/**
+ * One pool at one instant, measured once and valid for any quote size.
+ *
+ * A quote at the touch scores linearly in its size (up to the per-maker
+ * cap), so instead of scoring one particular size we store the score and
+ * collateral of a single contract. Your share for any size q is then
+ *   share = q·quoteWeight / (q·quoteWeight + competing)
+ * which lets the dashboard answer "what if I quoted 250?" without
+ * re-measuring anything.
+ */
 export interface PoolSample {
-  share: number;
-  capital: number;
+  /** Score of quoting one contract at the best bid and ask of every quoted contract. */
+  quoteWeight: number;
+  /** Score of everything already resting near the mid, across the same contracts. */
+  competing: number;
+  /** Collateral for one contract on each side of every quoted contract. */
+  capitalPerContract: number;
   contractsQuoted: number;
   oneSided: number;
   noBook: number;
 }
 
-export interface PoolEstimate {
-  pool: Pool;
-  /** Median over samples. */
-  share: number;
-  capital: number;
-  estUsdPerDay: number;
-  usdPerDayPer1k: number;
-  contractsQuoted: number;
-  contractsTotal: number;
-  liveEvents: number;
-  maxMakers: number;
-  samples: number;
+export interface QuoteSize {
+  size: number;
+  sizeCap: number;
 }
 
 /**
- * Your share of a pool's score at this instant if you quoted `size` at the
- * best bid and ask of every two-sided contract in it. The pool is split by
- * score summed across all of its events, so competition is summed the same
- * way. Contracts with a one-sided book, or no book yet (upcoming events), are
- * left out.
+ * Measure a pool across all of its contracts. The pool is split by score
+ * summed across all of its events, so competition is summed the same way.
+ * Contracts with a one-sided book, or no book yet (upcoming events), are
+ * left out, as are those whose spread is too wide for any quote at the
+ * touch to qualify.
  */
 export function samplePool(
   symbols: string[],
   bookOf: (symbol: string) => { bids: Level[]; asks: Level[] } | undefined,
-  plan: QuotePlan,
+  maxSpreadCents: number,
 ): PoolSample | null {
-  let mine = 0;
-  let theirs = 0;
-  let capital = 0;
-  let contractsQuoted = 0;
-  let oneSided = 0;
-  let noBook = 0;
+  const s: PoolSample = { quoteWeight: 0, competing: 0, capitalPerContract: 0, contractsQuoted: 0, oneSided: 0, noBook: 0 };
   for (const symbol of symbols) {
     const book = bookOf(symbol);
     if (!book) {
-      noBook++;
+      s.noBook++;
       continue;
     }
     const top = topOfBook(book.bids, book.asks);
     if (!top) {
-      oneSided++;
+      s.oneSided++;
       continue;
     }
-    const score = quoteScore(top, plan.size, plan.sizeCap, plan.maxSpreadCents);
-    if (score === 0) continue; // the spread is too wide for any quote at the touch to qualify
-    mine += score;
-    theirs += competingScore(book.bids, book.asks, top.mid, plan.maxSpreadCents);
-    capital += quoteCapital(top, plan.size);
-    contractsQuoted++;
+    const weight = quoteScore(top, 1, Infinity, maxSpreadCents);
+    if (weight === 0) continue;
+    s.quoteWeight += weight;
+    s.competing += competingScore(book.bids, book.asks, top.mid, maxSpreadCents);
+    s.capitalPerContract += quoteCapital(top, 1);
+    s.contractsQuoted++;
   }
-  if (mine === 0) return null;
-  return { share: mine / (mine + theirs), capital, contractsQuoted, oneSided, noBook };
+  return s.quoteWeight > 0 ? s : null;
 }
 
-export function summarize(pool: Pool, symbols: string[], samples: PoolSample[], liveEvents: number): PoolEstimate | null {
+export function shareFor(s: Pick<PoolSample, "quoteWeight" | "competing">, q: QuoteSize): number {
+  const mine = Math.min(q.size, q.sizeCap) * s.quoteWeight;
+  return mine / (mine + s.competing);
+}
+
+export interface PoolOutlook {
+  share: number;
+  estUsdPerDay: number;
+  capital: number;
+  usdPerDayPer1k: number;
+}
+
+/** What a given size would earn in a pool, from a (typically median) sample. */
+export function outlook(
+  s: Pick<PoolSample, "quoteWeight" | "competing" | "capitalPerContract">,
+  dailyUsd: number,
+  q: QuoteSize,
+): PoolOutlook {
+  const share = shareFor(s, q);
+  const estUsdPerDay = dailyUsd * share;
+  const capital = q.size * s.capitalPerContract;
+  return { share, estUsdPerDay, capital, usdPerDayPer1k: capital > 0 ? (estUsdPerDay / capital) * 1000 : 0 };
+}
+
+/** Field-by-field median, so one noisy second doesn't move the estimate. */
+export function medianSample(samples: PoolSample[]): PoolSample | null {
   if (samples.length === 0) return null;
-  const share = median(samples.map((s) => s.share));
-  const capital = median(samples.map((s) => s.capital));
-  const estUsdPerDay = pool.dailyUsd * share;
+  const med = (k: keyof PoolSample) => median(samples.map((s) => s[k]));
   return {
-    pool,
-    share,
-    capital,
-    estUsdPerDay,
-    usdPerDayPer1k: capital > 0 ? (estUsdPerDay / capital) * 1000 : 0,
-    contractsQuoted: Math.round(median(samples.map((s) => s.contractsQuoted))),
-    contractsTotal: symbols.length,
-    liveEvents,
-    maxMakers: Math.max(0, ...pool.events.map((e) => e.qualifyingMakers)),
-    samples: samples.length,
+    quoteWeight: med("quoteWeight"),
+    competing: med("competing"),
+    capitalPerContract: med("capitalPerContract"),
+    contractsQuoted: Math.round(med("contractsQuoted")),
+    oneSided: Math.round(med("oneSided")),
+    noBook: Math.round(med("noBook")),
   };
 }
 

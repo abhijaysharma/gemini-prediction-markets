@@ -52,7 +52,7 @@ export function KpiRow({ state }: { state: StatePayload }) {
   );
 }
 
-function Kpi(props: {
+export function Kpi(props: {
   icon: LucideIcon;
   label: string;
   hint?: string;
@@ -76,7 +76,7 @@ function Kpi(props: {
 }
 
 /** Renders "12.3 ms" with the unit set smaller than the number. */
-function Unit({ text }: { text: string }) {
+export function Unit({ text }: { text: string }) {
   const [n, unit] = text.split(" ");
   return (
     <>

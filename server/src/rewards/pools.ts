@@ -100,6 +100,20 @@ export async function fetchContractsByEvent(restUrl: string): Promise<Map<string
   return out;
 }
 
+/**
+ * Open contracts of one event. Used for events that appear after start-up,
+ * like each new 5-minute window, instead of re-reading every listing page.
+ * Empty when the event is unknown or nothing in it is open yet.
+ */
+export async function fetchEventContracts(restUrl: string, ticker: string): Promise<string[]> {
+  const res = await fetch(`${restUrl}/v1/prediction-markets/events/${encodeURIComponent(ticker)}`);
+  if (res.status === 404) return [];
+  if (!res.ok) throw new Error(`GET event ${ticker} failed with HTTP ${res.status}`);
+  const out = new Map<string, string[]>();
+  collectContracts(await res.json(), out);
+  return out.get(ticker) ?? [];
+}
+
 export function collectContracts(node: unknown, out: Map<string, string[]>): void {
   if (Array.isArray(node)) {
     for (const child of node) collectContracts(child, out);

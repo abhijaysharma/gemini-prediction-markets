@@ -1,5 +1,6 @@
 import { FeedClient } from "./feed";
 import { fetchMarkets, pickMarket } from "./markets";
+import { RewardsTracker } from "./rewards/tracker";
 import type { MarketInfo, StatePayload } from "./types";
 
 export interface AppOptions {
@@ -27,6 +28,8 @@ const STILL_TRADING = /active|open|trading|approved|awaiting|pending/i;
  */
 export class App {
   readonly feed: FeedClient;
+  /** Started by the first request for /api/rewards. */
+  readonly rewards: RewardsTracker;
   markets: MarketInfo[] = [];
   private mids: { t: number; mid: number }[] = [];
   private lastMidSample = 0;
@@ -40,6 +43,11 @@ export class App {
       pingMs: opts.pingMs,
       staleMs: opts.staleMs,
       quiet: opts.quiet,
+    });
+    this.rewards = new RewardsTracker({
+      restUrl: opts.restUrl,
+      wsUrl: opts.wsUrl,
+      log: opts.quiet ? undefined : (m) => console.log(`[rewards] ${m}`),
     });
     this.autoRollover = !opts.symbol;
     this.feed.on("symbol", () => {
@@ -63,6 +71,7 @@ export class App {
     for (const t of this.timers) clearInterval(t);
     this.timers = [];
     this.feed.stop();
+    this.rewards.stop();
   }
 
   selectSymbol(symbol: string): void {

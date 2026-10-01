@@ -18,6 +18,7 @@ const MIME: Record<string, string> = {
  * HTTP + WebSocket server for the dashboard.
  *   GET  /api/state            current state (for debugging)
  *   GET  /api/markets          discovered contracts
+ *   GET  /api/rewards          liquidity reward pools (starts measuring on first call)
  *   POST /api/symbol           { symbol }  switch markets
  *   POST /api/faults/drop      { count }   drop the next N book updates
  *   POST /api/faults/corrupt              silently change a size in the local book
@@ -51,6 +52,10 @@ export function createServer(app: App, opts: { staticDir: string; broadcastMs?: 
 async function handleApi(app: App, req: http.IncomingMessage, res: http.ServerResponse, pathname: string) {
   if (req.method === "GET" && pathname === "/api/state") return json(res, 200, app.buildState());
   if (req.method === "GET" && pathname === "/api/markets") return json(res, 200, app.markets);
+  if (req.method === "GET" && pathname === "/api/rewards") {
+    app.rewards.ensureStarted();
+    return json(res, 200, app.rewards.state());
+  }
 
   if (req.method === "POST" && pathname === "/api/symbol") {
     const body = await readJson(req);
