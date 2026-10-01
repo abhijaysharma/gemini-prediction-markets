@@ -1185,6 +1185,12 @@ select {
   vertical-align: -2px;
 }
 
+/* A ranking shows every row; narrow screens scroll sideways instead. */
+.rewards-table .table-scroll {
+  max-height: none;
+  overflow-x: auto;
+}
+
 .rewards-table .table td {
   vertical-align: middle;
 }
