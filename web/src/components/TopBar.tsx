@@ -56,7 +56,8 @@ export function TopBar({
             aria-label="Market"
             value={state.symbol ?? ""}
             onChange={(e) => void post("/api/symbol", { symbol: e.target.value })}
-            disabled={options.length === 0}
+            disabled={options.length === 0 || state.publicDemo}
+            title={state.publicDemo ? "The public demo follows the busiest live market. Run it locally to pick one." : undefined}
           >
             {options.length === 0 && <option value="">Discovering markets</option>}
             {options.map((m) => (

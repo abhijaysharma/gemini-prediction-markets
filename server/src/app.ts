@@ -11,6 +11,12 @@ export interface AppOptions {
   mode: "live" | "mock";
   /** Where the rewards tracker saves fills; omit to keep them in memory. */
   fillsFile?: string;
+  /**
+   * A shared public deployment. Every visitor watches the same feed, so one
+   * person's fault or market switch would hit everyone: switching is off and
+   * faults are limited to one per FAULT_COOLDOWN_MS across all visitors.
+   */
+  publicDemo?: boolean;
   pingMs?: number;
   staleMs?: number;
   quiet?: boolean;
@@ -21,6 +27,7 @@ const MID_SAMPLE_MS = 500;
 const MID_HISTORY = 600;
 const MARKET_REFRESH_MS = 60_000;
 const RETRY_DISCOVERY_MS = 10_000;
+export const FAULT_COOLDOWN_MS = 10_000;
 /** Status values that mean a contract is still (or about to be) tradable. */
 const STILL_TRADING = /active|open|trading|approved|awaiting|pending/i;
 
@@ -36,6 +43,7 @@ export class App {
   private mids: { t: number; mid: number }[] = [];
   private lastMidSample = 0;
   private autoRollover: boolean;
+  private faultsAvailableAt = 0;
   private rolling = false;
   private timers: NodeJS.Timeout[] = [];
 
@@ -75,6 +83,21 @@ export class App {
     this.timers = [];
     this.feed.stop();
     this.rewards.stop();
+  }
+
+  get publicDemo(): boolean {
+    return this.opts.publicDemo === true;
+  }
+
+  /**
+   * Gate for fault injection. Always allowed locally; in a public demo, one
+   * fault per cooldown across all visitors, since every fault hits everyone.
+   */
+  tryClaimFault(now = Date.now()): boolean {
+    if (!this.publicDemo) return true;
+    if (now < this.faultsAvailableAt) return false;
+    this.faultsAvailableAt = now + FAULT_COOLDOWN_MS;
+    return true;
   }
 
   selectSymbol(symbol: string): void {
@@ -154,6 +177,8 @@ export class App {
 
     return {
       mode: this.opts.mode,
+      publicDemo: this.publicDemo,
+      faultsAvailableAt: this.publicDemo && this.faultsAvailableAt > now ? this.faultsAvailableAt : null,
       symbol: f.symbol,
       feedState: f.state,
       connectedSince: f.connectedSince,

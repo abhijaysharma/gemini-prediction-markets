@@ -61,6 +61,10 @@ export interface MarketInfo {
 
 export interface StatePayload {
   mode: "live" | "mock";
+  /** A shared public deployment: market switching is off and faults are rate-limited. */
+  publicDemo: boolean;
+  /** In a public demo, no fault can be injected before this time. */
+  faultsAvailableAt: number | null;
   symbol: string | null;
   feedState: FeedState;
   connectedSince: number | null;

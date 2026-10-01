@@ -9,7 +9,9 @@ const FAULTS: { icon: LucideIcon; label: string; caughtBy: string; path: string;
 ];
 
 export function FaultPanel({ state }: { state: StatePayload }) {
-  const ready = state.feedState === "live" && state.recovery.inProgressSince === null;
+  const live = state.feedState === "live" && state.recovery.inProgressSince === null;
+  const coolingDown = state.faultsAvailableAt !== null && state.faultsAvailableAt > state.serverTime;
+  const ready = live && !coolingDown;
 
   return (
     <section className="glass panel faults">
@@ -31,10 +33,18 @@ export function FaultPanel({ state }: { state: StatePayload }) {
           </button>
         ))}
       </div>
-      {!ready && (
+      {!live && (
         <p className="faults-note">
           <Info size={14} strokeWidth={1.5} aria-hidden="true" />
           Available once the book is live.
+        </p>
+      )}
+      {live && state.publicDemo && (
+        <p className="faults-note">
+          <Info size={14} strokeWidth={1.5} aria-hidden="true" />
+          {coolingDown
+            ? `Shared demo: next fault in ${Math.ceil((state.faultsAvailableAt! - state.serverTime) / 1000)} s.`
+            : "Shared demo: a fault hits everyone watching, so one runs every 10 seconds."}
         </p>
       )}
     </section>

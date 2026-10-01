@@ -49,6 +49,8 @@ export function createServer(app: App, opts: { staticDir: string; broadcastMs?: 
   return server;
 }
 
+const FAULT_PATHS = new Set(["/api/faults/drop", "/api/faults/corrupt", "/api/faults/disconnect"]);
+
 async function handleApi(app: App, req: http.IncomingMessage, res: http.ServerResponse, pathname: string) {
   if (req.method === "GET" && pathname === "/api/state") return json(res, 200, app.buildState());
   if (req.method === "GET" && pathname === "/api/markets") return json(res, 200, app.markets);
@@ -58,10 +60,14 @@ async function handleApi(app: App, req: http.IncomingMessage, res: http.ServerRe
   }
 
   if (req.method === "POST" && pathname === "/api/symbol") {
+    if (app.publicDemo) return json(res, 403, { error: "Market switching is off in the public demo" });
     const body = await readJson(req);
     if (typeof body.symbol !== "string" || !body.symbol.trim()) return json(res, 400, { error: "symbol is required" });
     app.selectSymbol(body.symbol.trim());
     return json(res, 200, { ok: true });
+  }
+  if (req.method === "POST" && FAULT_PATHS.has(pathname) && !app.tryClaimFault()) {
+    return json(res, 429, { error: "One fault every 10 seconds in the shared demo" });
   }
   if (req.method === "POST" && pathname === "/api/faults/drop") {
     const body = await readJson(req);
