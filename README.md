@@ -85,7 +85,7 @@ For a demo, pick a busy contract: on a quiet market no deltas arrive, so *Drop 3
 npm test
 ```
 
-58 tests. The unit tests cover the book (sequencing, stale and overlapping frames, level removal, decimal canonicalization, crossed-book detection), the integrity checker, and market discovery and rollover. The end-to-end tests run the real `FeedClient` over real sockets against a mock exchange that speaks the same protocol and holds the true book, then assert the client's book is identical after each fault: dropped updates, an exchange-side gap, silent corruption, a cut connection, the exchange dropping every client, and a symbol switch. The mock also has a quiet mode, as on a live market with no activity: the book stops changing but `depth20` snapshots keep arriving, which covers lag sampling, the stale-data watchdog, and faults on a quiet book. The rewards tests pin the scoring model to the docs' worked example and run the whole estimator against the mock's reward endpoints.
+67 tests. The unit tests cover the book (sequencing, stale and overlapping frames, level removal, decimal canonicalization, crossed-book detection), the integrity checker, and market discovery and rollover. The end-to-end tests run the real `FeedClient` over real sockets against a mock exchange that speaks the same protocol and holds the true book, then assert the client's book is identical after each fault: dropped updates, an exchange-side gap, silent corruption, a cut connection, the exchange dropping every client, and a symbol switch. The mock also has a quiet mode, as on a live market with no activity: the book stops changing but `depth20` snapshots keep arriving, which covers lag sampling, the stale-data watchdog, and faults on a quiet book. The rewards tests pin the scoring model to the docs' worked example, check markout arithmetic by hand, and run the whole estimator against the mock's reward endpoints, including fills surviving a restart.
 
 ## Layout
 
@@ -98,7 +98,7 @@ server/src/
   app.ts           wiring, rollover, dashboard state
   http.ts          API and state stream
   mock/exchange.ts protocol-compatible mock for tests and offline demos
-  rewards/         liquidity rewards: scoring model, pools, depth20 sampler, estimates
+  rewards/         liquidity rewards: scoring, pools, sampler, tracker, fill markouts
 web/src/           React dashboard
 test/              unit and end-to-end tests
 scripts/           rewards.ts (npm run rewards), discover.ts and record.ts
@@ -133,7 +133,11 @@ Fantasy Football: 2026-27 Season Top QB            $50      21      17/20     0.
 
 **Why it errs low.** The public book merges every maker at a price, so the per-maker size cap can't be applied, and every competitor is assumed to earn the two-sided bonus. Both overstate the competition.
 
-**What it doesn't tell you.** Rewards are not profit. A resting quote gets filled, and on short-dated contracts mostly when the price is about to move against it. The estimate also assumes the book stays as it was during the sample, and that you meet the program's 50% uptime requirement.
+**Fill risk: the other side of the ledger.** Rewards are not profit. A resting quote gets traded against, and often by someone who knows the price is about to move. So the tracker also watches every trade in every reward pool and checks where the mid is 5, 30 and 60 seconds later. If a maker sold at 51¢ and the mid is 55¢ a minute later, that maker is 4¢ per contract worse off; traders call this the *markout*. Averaged per pool, it shows whether makers there keep the spread or get picked off. To estimate your own fills, each trade is replayed against your quote twice. At the back of the queue, a trade of Q contracts first fills the contracts already resting at that price when it arrived, and only what's left reaches you. At the front, every trade reaches you first. Either way you're never filled for more than your size. Your real place is somewhere in between, so fills and **net per day** (reward + fills × markout) are shown as a range, and the ranking sorts by the worse end. On live data, a new quote at the back of the queue was almost never reached: the makers at the front take the fills, and in crypto pools those fills lost money on average.
+
+Markouts need many trades, so finished fills are saved to `data/fills.ndjson` (a week's worth, kept across restarts), every figure carries its trade count and a 95% margin of error, and no net figure is shown below 30 trades. It still doesn't capture holding a position until settlement, when a contract jumps to $0 or $1.
+
+**Other assumptions.** The estimate assumes the book stays as it was during the sample, and that you meet the program's 50% uptime requirement.
 
 ## Verified on live data
 
@@ -151,7 +155,7 @@ Still unconfirmed: the contract status strings sent when a contract ends. Rollov
 
 The order book monitor is the foundation. Next up, each with a design doc before any code:
 
-1. **Liquidity rewards estimator** *(done, see above)*: live in the dashboard with per-pool trends.
+1. **Liquidity rewards estimator** *(done, see above)*: rewards, fill risk and net per pool, live in the dashboard.
 2. **Many books over shared connections**: needed by the features below ([design 0001](docs/design/0001-multi-contract-feed.md), deferred until then).
 3. **Market coherence monitor**: how tightly related contracts respect the rules of probability, and how fast breaks are corrected ([finding 0001](docs/findings/0001-market-coherence.md)).
 4. **Implied price distributions** from crypto strike ladders.
