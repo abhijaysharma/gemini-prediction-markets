@@ -79,13 +79,19 @@ Production build: `npm run build && npm start` serves the dashboard and API from
 
 For a demo, pick a busy contract: on a quiet market no deltas arrive, so *Drop 3 updates* waits until real ones do. *Corrupt the local book* and *Cut the connection* work on any market.
 
+## Deploy
+
+`render.yaml` deploys the whole thing as one [Render](https://render.com) web service: in Render, choose **New → Blueprint** and pick this repository. It redeploys on every push to `main` that passes CI.
+
+A public deployment runs with `PUBLIC_DEMO=1`. Every visitor watches the same feed, so market switching is off, and faults are limited to one every 10 seconds across everyone. On the free plan the service sleeps after 15 minutes without visitors, takes about a minute to wake, and starts its fill measurements over each time; a paid instance stays up and keeps collecting.
+
 ## Tests
 
 ```bash
 npm test
 ```
 
-67 tests. The unit tests cover the book (sequencing, stale and overlapping frames, level removal, decimal canonicalization, crossed-book detection), the integrity checker, and market discovery and rollover. The end-to-end tests run the real `FeedClient` over real sockets against a mock exchange that speaks the same protocol and holds the true book, then assert the client's book is identical after each fault: dropped updates, an exchange-side gap, silent corruption, a cut connection, the exchange dropping every client, and a symbol switch. The mock also has a quiet mode, as on a live market with no activity: the book stops changing but `depth20` snapshots keep arriving, which covers lag sampling, the stale-data watchdog, and faults on a quiet book. The rewards tests pin the scoring model to the docs' worked example, check markout arithmetic by hand, and run the whole estimator against the mock's reward endpoints, including fills surviving a restart.
+70 tests. The unit tests cover the book (sequencing, stale and overlapping frames, level removal, decimal canonicalization, crossed-book detection), the integrity checker, and market discovery and rollover. The end-to-end tests run the real `FeedClient` over real sockets against a mock exchange that speaks the same protocol and holds the true book, then assert the client's book is identical after each fault: dropped updates, an exchange-side gap, silent corruption, a cut connection, the exchange dropping every client, and a symbol switch. The mock also has a quiet mode, as on a live market with no activity: the book stops changing but `depth20` snapshots keep arriving, which covers lag sampling, the stale-data watchdog, and faults on a quiet book. HTTP tests check the public demo's limits. The rewards tests pin the scoring model to the docs' worked example, check markout arithmetic by hand, and run the whole estimator against the mock's reward endpoints, including fills surviving a restart.
 
 ## Layout
 
