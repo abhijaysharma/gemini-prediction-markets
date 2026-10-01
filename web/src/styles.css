@@ -1085,6 +1085,215 @@ select {
 
 /* ------------------------------------------------------------- responsive */
 
+/* ------------------------------------------------------------------ Tabs */
+
+.tabs {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 999px;
+  background: var(--glass-1);
+  border: 1px solid var(--glass-border);
+}
+
+.tab {
+  padding: 6px 14px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.tab:hover {
+  color: var(--text-1);
+}
+
+.tab.is-active {
+  background: var(--glass-3);
+  color: var(--text-1);
+  box-shadow: inset 0 0 0 1px var(--glass-border-strong);
+}
+
+.tab:focus-visible,
+.sort:focus-visible {
+  outline: 2px solid var(--accent-2);
+  outline-offset: 2px;
+}
+
+/* --------------------------------------------------------- Rewards view */
+
+.rewards-hero {
+  grid-template-columns: minmax(280px, 1.4fr) minmax(260px, 1fr);
+}
+
+.size-control {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 18px;
+  border-radius: var(--r-inner);
+  background: var(--glass-1);
+  border: 1px solid var(--glass-border);
+}
+
+.size-control label {
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.size-control label strong {
+  color: var(--text-1);
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+
+.size-control input[type="range"] {
+  width: 100%;
+  accent-color: var(--accent-2);
+}
+
+.size-scale {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+.sort {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
+
+.sort:hover,
+.sort.is-active {
+  color: var(--text-1);
+}
+
+.rewards-table .table th .hint {
+  margin-left: 4px;
+  vertical-align: -2px;
+}
+
+.rewards-table .table td {
+  vertical-align: middle;
+}
+
+.rewards-table .table td.strong {
+  color: var(--text-1);
+  font-weight: 600;
+}
+
+.pool-name {
+  color: var(--text-1);
+  font-weight: 500;
+}
+
+.pool-meta {
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+.spark {
+  position: relative;
+  display: inline-block;
+  line-height: 0;
+}
+
+.spark svg {
+  overflow: visible;
+  cursor: crosshair;
+}
+
+.spark-line {
+  fill: none;
+  stroke: var(--text-3);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.spark-cursor {
+  stroke: var(--glass-border-strong);
+  stroke-width: 1;
+}
+
+.spark-dot {
+  fill: var(--accent-2);
+  stroke: var(--bg-page);
+  stroke-width: 2;
+}
+
+.spark-dot.is-hover {
+  fill: var(--text-1);
+}
+
+.spark-tip {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  transform: translateX(-50%);
+  padding: 4px 8px;
+  border-radius: 8px;
+  background: rgba(14, 18, 28, 0.96);
+  border: 1px solid var(--glass-border-strong);
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-2);
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.spark-tip strong {
+  color: var(--text-1);
+}
+
+.spark-empty {
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+.caveats ul {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 8px;
+  color: var(--text-2);
+  font-size: 13px;
+}
+
+.rewards-starting {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 48px 24px;
+  text-align: center;
+}
+
+.rewards-starting h2 {
+  margin: 6px 0 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.rewards-starting p {
+  margin: 0;
+  max-width: 520px;
+  color: var(--text-2);
+}
+
 @media (max-width: 1180px) {
   .grid {
     grid-template-columns: 300px minmax(0, 1fr);
@@ -1112,8 +1321,16 @@ select {
     width: 100%;
   }
   .grid,
-  .hero {
+  .hero,
+  .rewards-hero {
     grid-template-columns: 1fr;
+  }
+  .tabs {
+    order: 3;
+    width: 100%;
+  }
+  .tab {
+    flex: 1;
   }
   .side {
     display: flex;

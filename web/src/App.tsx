@@ -6,13 +6,15 @@ import { EventLog } from "./components/EventLog";
 import { KpiRow } from "./components/KpiRow";
 import { Ladder } from "./components/Ladder";
 import { MidChart } from "./components/MidChart";
+import { RewardsPage } from "./components/RewardsPage";
 import { TopBar } from "./components/TopBar";
 import { TradeTape } from "./components/TradeTape";
-import { useMarkets, useStream } from "./useStream";
+import { useMarkets, useStream, useView } from "./useStream";
 
 export function App() {
   const { state, connected } = useStream();
   const markets = useMarkets();
+  const [view, setView] = useView();
 
   if (!state) {
     return (
@@ -30,21 +32,27 @@ export function App() {
 
   return (
     <div className="shell">
-      <TopBar state={state} markets={markets} connected={connected} />
-      <IntegrityStrip state={state} />
-      <KpiRow state={state} />
-      <main className="grid">
-        <Ladder state={state} />
-        <section className="center">
-          <MidChart mids={state.mids} />
-          <TradeTape trades={state.trades} />
-        </section>
-        <aside className="side">
-          <FaultPanel state={state} />
-          <HealthPanel state={state} />
-          <EventLog log={state.log} />
-        </aside>
-      </main>
+      <TopBar state={state} markets={markets} connected={connected} view={view} setView={setView} />
+      {view === "rewards" ? (
+        <RewardsPage />
+      ) : (
+        <>
+          <IntegrityStrip state={state} />
+          <KpiRow state={state} />
+          <main className="grid">
+            <Ladder state={state} />
+            <section className="center">
+              <MidChart mids={state.mids} />
+              <TradeTape trades={state.trades} />
+            </section>
+            <aside className="side">
+              <FaultPanel state={state} />
+              <HealthPanel state={state} />
+              <EventLog log={state.log} />
+            </aside>
+          </main>
+        </>
+      )}
     </div>
   );
 }
