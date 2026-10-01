@@ -43,7 +43,9 @@ async function main() {
     fillsFile: process.env.FILLS_FILE ?? path.resolve(here, `../../data/${useMock ? "fills-mock" : "fills"}.ndjson`),
     publicDemo: process.env.PUBLIC_DEMO === "1",
   });
-  const server = createServer(app, { staticDir });
+  // A shared deployment pushes 4 updates a second instead of 10: each open tab
+  // otherwise costs ~84 KB/s of metered outbound bandwidth.
+  const server = createServer(app, { staticDir, broadcastMs: app.publicDemo ? 250 : 100 });
   server.listen(port, () => {
     console.log(`Dashboard server on http://localhost:${port}`);
     console.log(`Data source: ${useMock ? "mock exchange" : wsUrl}`);

@@ -25,7 +25,9 @@ export interface AppOptions {
 const LADDER_DEPTH = 14;
 const MID_SAMPLE_MS = 500;
 const MID_HISTORY = 600;
-const MARKET_REFRESH_MS = 60_000;
+// The listing is ~4 MB per request. Status changes already arrive instantly on
+// the contractStatus stream; this only catches contracts that were delisted.
+const MARKET_REFRESH_MS = 10 * 60_000;
 const RETRY_DISCOVERY_MS = 10_000;
 export const FAULT_COOLDOWN_MS = 10_000;
 /** Status values that mean a contract is still (or about to be) tradable. */
@@ -58,6 +60,8 @@ export class App {
       restUrl: opts.restUrl,
       wsUrl: opts.wsUrl,
       fillsFile: opts.fillsFile,
+      // Shared deployments stop measuring when nobody has the Rewards tab open.
+      idleStopMs: opts.publicDemo ? 15 * 60_000 : undefined,
       log: opts.quiet ? undefined : (m) => console.log(`[rewards] ${m}`),
     });
     this.autoRollover = !opts.symbol;
