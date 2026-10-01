@@ -106,21 +106,26 @@ export function fillStats(records: FillRecord[]): FillStats {
   return { trades: records.length, contracts, markoutCents, se60 };
 }
 
+const DAY_MS = 86_400_000;
+
 /**
- * Expected daily P&L from fills on a quote of `size` per side, in dollars;
- * negative is a cost. Your share of each fill is approximated by your share
- * of the size resting at the touch. A new quote joins the back of the queue,
- * so this overstates your fills, which exaggerates the result in whichever
- * direction the markout points.
+ * Contracts of a `size` quote that would have been filled per day, given the
+ * trades seen. A new quote joins the back of the queue at its price, so a
+ * trade of Q contracts first fills the `queueAhead` already resting there,
+ * and only what's left reaches you, never more than your size:
+ *   your fill = min(size, max(0, Q - queueAhead))
+ * Small trades never reach you, and one huge trade can't fill more than you
+ * offered.
  */
-export function fillPnlPerDay(
-  stats: FillStats,
-  contractsPerDay: number,
-  size: number,
-  touchSizePerSide: number,
-): number | null {
-  const m60 = stats.markoutCents[HORIZONS_S.length - 1];
+export function yourFillsPerDay(tradeSizes: number[], observedMs: number, size: number, queueAhead: number): number {
+  if (observedMs <= 0) return 0;
+  const filled = tradeSizes.reduce((s, q) => s + Math.min(size, Math.max(0, q - queueAhead)), 0);
+  return (filled / observedMs) * DAY_MS;
+}
+
+/** Daily P&L from those fills in dollars, negative being a cost; null until there are enough trades. */
+export function fillPnlPerDay(stats: FillStats, fillsPerDay: number): number | null {
+  const m60 = stats.markoutCents[stats.markoutCents.length - 1];
   if (stats.trades < MIN_TRADES || m60 === null) return null;
-  const share = size / (size + touchSizePerSide);
-  return (contractsPerDay * share * m60) / 100;
+  return (fillsPerDay * m60) / 100;
 }

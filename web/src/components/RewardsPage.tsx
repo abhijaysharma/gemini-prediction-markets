@@ -1,7 +1,7 @@
 import { Activity, Coins, Gauge, LoaderCircle, TrendingUp } from "lucide-react";
 import { useMemo, useState } from "react";
 import { outlook, type PoolOutlook } from "../../../server/src/rewards/estimate";
-import { fillPnlPerDay } from "../../../server/src/rewards/markout";
+import { fillPnlPerDay, yourFillsPerDay } from "../../../server/src/rewards/markout";
 import type { RewardsPoolView, RewardsState } from "../../../server/src/types";
 import { fmtInt } from "../format";
 import { useRewards } from "../useStream";
@@ -55,15 +55,16 @@ function Ready(props: {
       }
       const o = outlook(pool.now, pool.dailyUsd, q);
       // The queue a new quote joins: contracts resting at the touch, per side, per quoted contract.
-      const touch = pool.now.touchSize / pool.now.contractsQuoted;
-      const perDay = pool.fills.contractsPerDay;
-      const fillPnl = perDay === null ? null : fillPnlPerDay(pool.fills, perDay, size, touch);
+      const queueAhead = pool.now.touchSize / pool.now.contractsQuoted;
+      const f = pool.fills;
+      const fills = f.enoughObserved ? yourFillsPerDay(f.runTradeSizes, f.observedMs, size, queueAhead) : null;
+      const fillPnl = fills === null ? null : fillPnlPerDay(f, fills);
       rows.push({
         pool,
         ...o,
         // Share is recomputed for the chosen size at every point, since each point stores size-free inputs.
         trend: pool.history.map((h) => ({ t: h.t, v: outlook(h, pool.dailyUsd, q).share })),
-        yourFillsPerDay: perDay === null ? null : perDay * (size / (size + touch)),
+        yourFillsPerDay: fills,
         fillPnl,
         net: fillPnl === null ? null : o.estUsdPerDay + fillPnl,
       });
@@ -183,7 +184,7 @@ function Ready(props: {
                   {th("per1k", "Reward per $1k", { right: true, hint: "Estimated reward per day for every $1,000 of collateral." })}
                   <th className="r">
                     Your fills/day
-                    <Hint text="Contracts of your quote likely to be traded against each day: the pool's volume times your share of the queue at the best prices." />
+                    <Hint text="Contracts of your quote that this run's trades would have filled, per day. You join the back of the queue at the best price, so a trade only reaches you after filling everything resting ahead of you." />
                   </th>
                   <th className="r">
                     Maker P&amp;L per fill
@@ -261,12 +262,13 @@ function Ready(props: {
           <li>Estimates assume the book stays as it is and that you meet the program's 50% uptime requirement.</li>
           <li>
             Fill P&amp;L marks each trade {lastHorizon} seconds later. It doesn't capture holding a position to
-            settlement, where a contract jumps to $0 or $1. Your share of fills assumes you'd get your share of the queue
-            at the best prices; a new quote waits behind earlier ones, so real fills would be fewer.
+            settlement, where a contract jumps to $0 or $1. Fills assume you wait behind everything already resting at your
+            price, using the pool's typical queue rather than the exact one at each trade, and a quote that never moves.
           </li>
           <li>
-            Trading volume is measured over this run only, and markouts over the last week. A pool with few trades can
-            look very good or very bad by chance; the ± is a 95% margin of error.
+            Trading volume is measured over this run only and scaled to a day, and markouts over the last week. Trades
+            cluster around news, so a quiet or busy hour scales badly. A pool with few trades can look very good or very
+            bad by chance; the ± is a 95% margin of error.
           </li>
         </ul>
       </section>

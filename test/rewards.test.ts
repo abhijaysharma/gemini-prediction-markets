@@ -226,7 +226,8 @@ describe("rewards against the mock exchange", () => {
       await waitFor(() => first.state().pools.some((p) => p.fills.trades >= 3), 10_000);
       const btc = first.state().pools.find((p) => p.fills.trades >= 3)!.fills;
       expect(btc.markoutCents.every((m) => m !== null)).toBe(true);
-      expect(btc.contractsPerDay).toBeGreaterThan(0);
+      expect(btc.runTradeSizes.length).toBeGreaterThanOrEqual(3);
+      expect(btc.enoughObserved).toBe(true);
     } finally {
       first.stop();
     }

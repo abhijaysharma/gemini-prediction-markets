@@ -128,9 +128,11 @@ export interface PoolFills {
   /** Size-weighted maker P&L per contract, in cents, at each of RewardsState.horizonsS. */
   markoutCents: (number | null)[];
   se60: number | null;
-  /** Contracts traded per day, measured over this run only; null until it has watched long enough. */
-  contractsPerDay: number | null;
-  observedMinutes: number;
+  /** Size of every trade seen in this run, for the queue model in yourFillsPerDay. */
+  runTradeSizes: number[];
+  /** How long this run has watched the pool; volume isn't extrapolated until it's long enough. */
+  observedMs: number;
+  enoughObserved: boolean;
 }
 
 export interface RewardsState {

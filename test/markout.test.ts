@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { fillPnlPerDay, fillStats, makerPnlCents, MarkoutTracker, MIN_TRADES, type FillRecord } from "../server/src/rewards/markout";
+import {
+  fillPnlPerDay,
+  fillStats,
+  makerPnlCents,
+  MarkoutTracker,
+  MIN_TRADES,
+  yourFillsPerDay,
+  type FillRecord,
+} from "../server/src/rewards/markout";
 
 const fill = (over: Partial<FillRecord> = {}): FillRecord => ({
   poolId: "p",
@@ -51,14 +59,24 @@ describe("markout", () => {
     expect(s.se60).toBeCloseTo(Math.sqrt(1.5), 9);
   });
 
-  it("estimates nothing until there are enough trades", () => {
-    const few = fillStats(Array.from({ length: MIN_TRADES - 1 }, () => fill({ markoutCents: [0, 0, -2] })));
-    expect(fillPnlPerDay(few, 1000, 100, 100)).toBeNull();
+  it("fills a quote at the back of the queue only with what's left of each trade", () => {
+    const hour = 3_600_000;
+    // 50 resting ahead of a 100-lot. A 30-lot never reaches us, an 80-lot leaves us 30,
+    // and a 1,000-lot fills all 100 of ours but no more: 130 contracts in an hour.
+    expect(yourFillsPerDay([30, 80, 1000], hour, 100, 50)).toBeCloseTo(130 * 24, 9);
+    // Nothing ahead of us: every trade reaches us, capped at our size.
+    expect(yourFillsPerDay([30, 80, 1000], hour, 100, 0)).toBeCloseTo((30 + 80 + 100) * 24, 9);
+    expect(yourFillsPerDay([30], 0, 100, 0)).toBe(0);
   });
 
-  it("turns markout, volume and queue share into dollars a day", () => {
+  it("estimates nothing until there are enough trades", () => {
+    const few = fillStats(Array.from({ length: MIN_TRADES - 1 }, () => fill({ markoutCents: [0, 0, -2] })));
+    expect(fillPnlPerDay(few, 500)).toBeNull();
+  });
+
+  it("turns fills and markout into dollars a day", () => {
     const enough = fillStats(Array.from({ length: MIN_TRADES }, () => fill({ markoutCents: [0, 0, -2] })));
-    // 1,000 contracts a day, half of each fill is ours, -2c each: -$10 a day.
-    expect(fillPnlPerDay(enough, 1000, 100, 100)).toBeCloseTo(-10, 9);
+    // 500 of our contracts filled a day at -2c each: -$10 a day.
+    expect(fillPnlPerDay(enough, 500)).toBeCloseTo(-10, 9);
   });
 });

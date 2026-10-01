@@ -37,6 +37,7 @@ export interface TrackerOptions {
 
 const RETRY_LOOKUP_MS = 5 * 60_000;
 const KEEP_FILLS_MS = 7 * 24 * 60 * 60 * 1000;
+const MAX_RUN_TRADES = 5_000;
 
 /**
  * Measures every liquidity reward pool continuously and keeps a short trend
@@ -59,7 +60,7 @@ export class RewardsTracker {
   private markouts: MarkoutTracker;
   private fills = new Map<string, FillRecord[]>();
   private poolOfSymbol = new Map<string, string>();
-  private volumeThisRun = new Map<string, number>();
+  private tradesThisRun = new Map<string, { at: number; qty: number }[]>();
   private watchedSince = new Map<string, number>();
   private store: FillStore | null;
   private sampler: DepthSampler;
@@ -158,7 +159,11 @@ export class RewardsTracker {
     const poolId = this.poolOfSymbol.get(t.symbol);
     if (!poolId) return;
     this.markouts.add({ poolId, symbol: t.symbol, at: t.at, price: t.price, qty: t.qty, takerBuy: t.takerBuy });
-    this.volumeThisRun.set(poolId, (this.volumeThisRun.get(poolId) ?? 0) + t.qty);
+    const run = this.tradesThisRun.get(poolId) ?? [];
+    run.push({ at: t.at, qty: t.qty });
+    // Bound memory on a very busy pool; the observed window then starts at the oldest kept trade.
+    if (run.length > MAX_RUN_TRADES) run.shift();
+    this.tradesThisRun.set(poolId, run);
   }
 
   /** Mark pending fills against the current mids, and keep the ones that are done. */
@@ -179,13 +184,15 @@ export class RewardsTracker {
 
   private fillsView(poolId: string): PoolFills {
     const stats = fillStats(this.fills.get(poolId) ?? []);
-    const since = this.watchedSince.get(poolId);
+    const run = this.tradesThisRun.get(poolId) ?? [];
+    let since = this.watchedSince.get(poolId);
+    if (since !== undefined && run.length === MAX_RUN_TRADES) since = Math.max(since, run[0].at);
     const observedMs = since === undefined ? 0 : Date.now() - since;
-    const enough = observedMs >= (this.opts.minObserveMs ?? 10 * 60_000);
     return {
       ...stats,
-      contractsPerDay: enough ? ((this.volumeThisRun.get(poolId) ?? 0) / observedMs) * 86_400_000 : null,
-      observedMinutes: Math.floor(observedMs / 60_000),
+      runTradeSizes: run.map((t) => t.qty),
+      observedMs,
+      enoughObserved: observedMs >= (this.opts.minObserveMs ?? 10 * 60_000),
     };
   }
 
