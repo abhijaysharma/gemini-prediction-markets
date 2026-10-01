@@ -75,6 +75,7 @@ Production build: `npm run build && npm start` serves the dashboard and API from
 - **Key metrics**: integrity pass rate, feed lag, messages per second, and the last rebuild time.
 - **Order book** (left): the local book's top levels. **Mid price** and **Trades** (center).
 - **Inject a fault** (right), with **Feed health** counters and the **Event log**, which narrates each detection and recovery.
+- **Rewards** tab: the liquidity rewards estimator (below).
 
 For a demo, pick a busy contract: on a quiet market no deltas arrive, so *Drop 3 updates* waits until real ones do. *Corrupt the local book* and *Cut the connection* work on any market.
 
@@ -84,7 +85,7 @@ For a demo, pick a busy contract: on a quiet market no deltas arrive, so *Drop 3
 npm test
 ```
 
-54 tests. The unit tests cover the book (sequencing, stale and overlapping frames, level removal, decimal canonicalization, crossed-book detection), the integrity checker, and market discovery and rollover. The end-to-end tests run the real `FeedClient` over real sockets against a mock exchange that speaks the same protocol and holds the true book, then assert the client's book is identical after each fault: dropped updates, an exchange-side gap, silent corruption, a cut connection, the exchange dropping every client, and a symbol switch. The mock also has a quiet mode, as on a live market with no activity: the book stops changing but `depth20` snapshots keep arriving, which covers lag sampling, the stale-data watchdog, and faults on a quiet book. The rewards tests pin the scoring model to the docs' worked example and run the whole estimator against the mock's reward endpoints.
+58 tests. The unit tests cover the book (sequencing, stale and overlapping frames, level removal, decimal canonicalization, crossed-book detection), the integrity checker, and market discovery and rollover. The end-to-end tests run the real `FeedClient` over real sockets against a mock exchange that speaks the same protocol and holds the true book, then assert the client's book is identical after each fault: dropped updates, an exchange-side gap, silent corruption, a cut connection, the exchange dropping every client, and a symbol switch. The mock also has a quiet mode, as on a live market with no activity: the book stops changing but `depth20` snapshots keep arriving, which covers lag sampling, the stale-data watchdog, and faults on a quiet book. The rewards tests pin the scoring model to the docs' worked example and run the whole estimator against the mock's reward endpoints.
 
 ## Layout
 
@@ -105,7 +106,13 @@ scripts/           rewards.ts (npm run rewards), discover.ts and record.ts
 
 ## Liquidity rewards estimator
 
-Gemini pays daily USD pools to makers who keep quotes resting near the midpoint. It publishes the pools and the order books, but not how much a new quote would earn. This command estimates that for every pool, from public data only:
+Gemini pays daily USD pools to makers who keep quotes resting near the midpoint. It publishes the pools and the order books, but not how much a new quote would earn. The dashboard's **Rewards** tab estimates that for every pool, live, from public data only:
+
+![Rewards tab ranking Gemini's live reward pools](docs/rewards-live.png)
+
+The quote-size slider re-ranks instantly without re-measuring: a quote at the touch scores in proportion to its size, so the server stores each pool's measurements per contract and the browser scales them. Each row's trend line shows how your share has moved as competition came and went. The tracker starts the first time the tab is opened, so the dashboard sends Gemini nothing extra until then.
+
+The same estimate is available in a terminal:
 
 ```bash
 npm run rewards -- --size 100 --seconds 60
@@ -144,7 +151,7 @@ Still unconfirmed: the contract status strings sent when a contract ends. Rollov
 
 The order book monitor is the foundation. Next up, each with a design doc before any code:
 
-1. **Liquidity rewards estimator** *(first version done, see above)*: next, a dashboard view and tracking how each pool's competition changes through the day.
+1. **Liquidity rewards estimator** *(done, see above)*: live in the dashboard with per-pool trends.
 2. **Many books over shared connections**: needed by the features below ([design 0001](docs/design/0001-multi-contract-feed.md), deferred until then).
 3. **Market coherence monitor**: how tightly related contracts respect the rules of probability, and how fast breaks are corrected ([finding 0001](docs/findings/0001-market-coherence.md)).
 4. **Implied price distributions** from crypto strike ladders.
